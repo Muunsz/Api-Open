@@ -135,14 +135,26 @@ async function handleChangePassword() {
             </el-radio-group>
           </el-form-item>
 
+          <el-form-item label="Top Bar Position">
+            <el-radio-group v-model="settings.navbarPosition">
+              <el-radio-button value="top">Top</el-radio-button>
+              <el-radio-button value="bottom">Bottom</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+
           <el-form-item label="Sidebar List Position">
             <el-radio-group v-model="settings.sidebarPosition">
               <el-radio-button value="left">Left</el-radio-button>
               <el-radio-button value="right">Right</el-radio-button>
+              <el-radio-button value="top">Top</el-radio-button>
+              <el-radio-button value="bottom">Bottom</el-radio-button>
             </el-radio-group>
           </el-form-item>
 
-          <el-form-item :label="`Sidebar Width (${settings.sidebarWidth}px)`">
+          <el-form-item
+            v-if="settings.sidebarPosition === 'left' || settings.sidebarPosition === 'right'"
+            :label="`Sidebar Width (${settings.sidebarWidth}px)`"
+          >
             <el-slider
               v-model="settings.sidebarWidth"
               :min="200"
@@ -151,10 +163,24 @@ async function handleChangePassword() {
             />
           </el-form-item>
 
+          <el-form-item
+            v-else
+            :label="`Sidebar Height (${settings.sidebarHeight}px)`"
+          >
+            <el-slider
+              v-model="settings.sidebarHeight"
+              :min="140"
+              :max="420"
+              :step="10"
+            />
+          </el-form-item>
+
           <el-form-item label="Response Position">
             <el-radio-group v-model="settings.responsePosition">
-              <el-radio-button value="bottom">Bottom</el-radio-button>
+              <el-radio-button value="left">Left</el-radio-button>
               <el-radio-button value="right">Right</el-radio-button>
+              <el-radio-button value="top">Top</el-radio-button>
+              <el-radio-button value="bottom">Bottom</el-radio-button>
             </el-radio-group>
           </el-form-item>
 

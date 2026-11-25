@@ -118,15 +118,41 @@ function openSettings(tabName: 'layout' | 'profile' = 'layout') {
   settingsVisible.value = true;
 }
 
+const isSidebarVertical = computed(
+  () => settings.sidebarPosition === 'top' || settings.sidebarPosition === 'bottom',
+);
+
+const isResponseHorizontal = computed(
+  () => settings.responsePosition === 'left' || settings.responsePosition === 'right',
+);
+
+const mobileDrawerDirection = computed(() => {
+  const map: Record<string, 'ltr' | 'rtl' | 'ttb' | 'btt'> = {
+    left: 'ltr',
+    right: 'rtl',
+    top: 'ttb',
+    bottom: 'btt',
+  };
+  return map[settings.sidebarPosition] ?? 'ltr';
+});
+
 function startSidebarResize(e: MouseEvent) {
   e.preventDefault();
   const startX = e.clientX;
+  const startY = e.clientY;
   const startWidth = settings.sidebarWidth;
-  const isRight = settings.sidebarPosition === 'right';
+  const startHeight = settings.sidebarHeight;
 
   const onMove = (ev: MouseEvent) => {
-    const delta = isRight ? startX - ev.clientX : ev.clientX - startX;
-    settings.sidebarWidth = Math.min(480, Math.max(200, startWidth + delta));
+    if (settings.sidebarPosition === 'left') {
+      settings.sidebarWidth = Math.min(480, Math.max(200, startWidth + (ev.clientX - startX)));
+    } else if (settings.sidebarPosition === 'right') {
+      settings.sidebarWidth = Math.min(480, Math.max(200, startWidth + (startX - ev.clientX)));
+    } else if (settings.sidebarPosition === 'top') {
+      settings.sidebarHeight = Math.min(420, Math.max(140, startHeight + (ev.clientY - startY)));
+    } else {
+      settings.sidebarHeight = Math.min(420, Math.max(140, startHeight + (startY - ev.clientY)));
+    }
   };
   const onUp = () => {
     window.removeEventListener('mousemove', onMove);
@@ -143,13 +169,17 @@ function startResponseResize(e: MouseEvent) {
   const rect = container.getBoundingClientRect();
 
   const onMove = (ev: MouseEvent) => {
+    let pct = settings.responseSizePercent;
     if (settings.responsePosition === 'right') {
-      const pct = ((rect.right - ev.clientX) / rect.width) * 100;
-      settings.responseSizePercent = Math.round(Math.min(75, Math.max(25, pct)));
+      pct = ((rect.right - ev.clientX) / rect.width) * 100;
+    } else if (settings.responsePosition === 'left') {
+      pct = ((ev.clientX - rect.left) / rect.width) * 100;
+    } else if (settings.responsePosition === 'bottom') {
+      pct = ((rect.bottom - ev.clientY) / rect.height) * 100;
     } else {
-      const pct = ((rect.bottom - ev.clientY) / rect.height) * 100;
-      settings.responseSizePercent = Math.round(Math.min(75, Math.max(25, pct)));
+      pct = ((ev.clientY - rect.top) / rect.height) * 100;
     }
+    settings.responseSizePercent = Math.round(Math.min(75, Math.max(25, pct)));
   };
   const onUp = () => {
     window.removeEventListener('mousemove', onMove);
@@ -621,7 +651,10 @@ async function saveEnvVars() {
 </script>
 
 <template>
-  <el-container class="app-shell">
+  <el-container
+    class="app-shell"
+    :class="{ 'navbar-bottom': settings.navbarPosition === 'bottom' }"
+  >
     <el-header height="auto" class="top-bar">
       <div class="top-left">
         <el-button
@@ -740,10 +773,11 @@ async function saveEnvVars() {
 
     <el-container
       class="main-body"
-      :class="{ 'sidebar-on-right': settings.sidebarPosition === 'right' }"
+      :class="`sidebar-pos-${settings.sidebarPosition}`"
     >
       <el-aside
-        :width="`${settings.sidebarWidth}px`"
+        :width="isSidebarVertical ? '100%' : `${settings.sidebarWidth}px`"
+        :style="isSidebarVertical ? { height: `${settings.sidebarHeight}px` } : {}"
         class="sidebar desktop-sidebar"
       >
         <el-tabs v-model="sidebarTab" stretch>
@@ -907,6 +941,7 @@ async function saveEnvVars() {
 
       <div
         class="sidebar-resizer desktop-sidebar"
+        :class="{ 'is-horizontal': isSidebarVertical }"
         title="Drag to resize sidebar"
         @mousedown="startSidebarResize"
       />
@@ -965,7 +1000,7 @@ async function saveEnvVars() {
         <div
           ref="splitContainerRef"
           class="request-response-split"
-          :class="{ 'split-horizontal': settings.responsePosition === 'right' }"
+          :class="`split-${settings.responsePosition}`"
         >
         <div class="request-pane kt-card kt-card-bordered">
         <el-tabs v-model="activeRequestTab" class="request-tabs">
@@ -1318,7 +1353,7 @@ async function saveEnvVars() {
 
         <div
           class="response-resizer"
-          :class="{ 'is-vertical': settings.responsePosition === 'right' }"
+          :class="{ 'is-vertical': isResponseHorizontal }"
           title="Drag to resize response panel"
           @mousedown="startResponseResize"
         />
@@ -1326,7 +1361,7 @@ async function saveEnvVars() {
         <div
           class="response-section kt-card kt-card-bordered"
           :style="
-            settings.responsePosition === 'right'
+            isResponseHorizontal
               ? { width: `${settings.responseSizePercent}%`, flex: 'none' }
               : { height: `${settings.responseSizePercent}%`, flex: 'none' }
           "
@@ -1713,7 +1748,7 @@ async function saveEnvVars() {
     <el-drawer
       v-model="mobileSidebarVisible"
       title="Workspace"
-      :direction="settings.sidebarPosition === 'right' ? 'rtl' : 'ltr'"
+      :direction="mobileDrawerDirection"
       size="290px"
     >
       <el-tabs v-model="sidebarTab" stretch>
@@ -1774,6 +1809,15 @@ async function saveEnvVars() {
   height: 100vh;
   background: var(--ao-bg);
   color: var(--ao-text);
+  display: flex;
+  flex-direction: column;
+}
+.app-shell.navbar-bottom {
+  flex-direction: column-reverse;
+}
+.app-shell.navbar-bottom .top-bar {
+  border-bottom: none;
+  border-top: 1px solid var(--ao-border);
 }
 .top-bar {
   display: flex;
@@ -1834,9 +1878,20 @@ async function saveEnvVars() {
 }
 .main-body {
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
 }
-.main-body.sidebar-on-right {
+.main-body.sidebar-pos-left {
+  flex-direction: row;
+}
+.main-body.sidebar-pos-right {
   flex-direction: row-reverse;
+}
+.main-body.sidebar-pos-top {
+  flex-direction: column;
+}
+.main-body.sidebar-pos-bottom {
+  flex-direction: column-reverse;
 }
 .sidebar {
   background: var(--ao-surface);
@@ -1845,9 +1900,17 @@ async function saveEnvVars() {
   overflow-y: auto;
   flex-shrink: 0;
 }
-.sidebar-on-right .sidebar {
+.sidebar-pos-right .sidebar {
   border-right: none;
   border-left: 1px solid var(--ao-border);
+}
+.sidebar-pos-top .sidebar {
+  border-right: none;
+  border-bottom: 1px solid var(--ao-border);
+}
+.sidebar-pos-bottom .sidebar {
+  border-right: none;
+  border-top: 1px solid var(--ao-border);
 }
 .sidebar-resizer {
   width: 4px;
@@ -1855,6 +1918,11 @@ async function saveEnvVars() {
   background: transparent;
   transition: background 0.15s;
   flex-shrink: 0;
+}
+.sidebar-resizer.is-horizontal {
+  width: 100%;
+  height: 4px;
+  cursor: row-resize;
 }
 .sidebar-resizer:hover {
   background: var(--ao-accent);
@@ -1866,8 +1934,17 @@ async function saveEnvVars() {
   min-height: 0;
   gap: 4px;
 }
-.request-response-split.split-horizontal {
+.request-response-split.split-bottom {
+  flex-direction: column;
+}
+.request-response-split.split-top {
+  flex-direction: column-reverse;
+}
+.request-response-split.split-right {
   flex-direction: row;
+}
+.request-response-split.split-left {
+  flex-direction: row-reverse;
 }
 .request-pane {
   flex: 1;
@@ -2118,7 +2195,8 @@ async function saveEnvVars() {
   .env-actions {
     flex-wrap: wrap;
   }
-  .request-response-split.split-horizontal {
+  .request-response-split.split-right,
+  .request-response-split.split-left {
     flex-direction: column;
   }
   .response-section {

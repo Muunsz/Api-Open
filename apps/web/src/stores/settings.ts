@@ -2,14 +2,16 @@ import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 
 export type ThemeMode = 'light' | 'dark';
-export type SidebarPosition = 'left' | 'right';
-export type ResponsePosition = 'bottom' | 'right';
+export type NavbarPosition = 'top' | 'bottom';
+export type PanelPosition = 'left' | 'right' | 'top' | 'bottom';
 
 export interface AppSettings {
   theme: ThemeMode;
-  sidebarPosition: SidebarPosition;
+  navbarPosition: NavbarPosition;
+  sidebarPosition: PanelPosition;
   sidebarWidth: number;
-  responsePosition: ResponsePosition;
+  sidebarHeight: number;
+  responsePosition: PanelPosition;
   responseSizePercent: number;
 }
 
@@ -17,8 +19,10 @@ const SETTINGS_KEY = 'api_open_settings_v1';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'light',
+  navbarPosition: 'top',
   sidebarPosition: 'left',
   sidebarWidth: 280,
+  sidebarHeight: 220,
   responsePosition: 'bottom',
   responseSizePercent: 45,
 };
@@ -36,9 +40,11 @@ function loadSettings(): AppSettings {
 export const useSettingsStore = defineStore('settings', () => {
   const initial = loadSettings();
   const theme = ref<ThemeMode>(initial.theme);
-  const sidebarPosition = ref<SidebarPosition>(initial.sidebarPosition);
+  const navbarPosition = ref<NavbarPosition>(initial.navbarPosition);
+  const sidebarPosition = ref<PanelPosition>(initial.sidebarPosition);
   const sidebarWidth = ref<number>(initial.sidebarWidth);
-  const responsePosition = ref<ResponsePosition>(initial.responsePosition);
+  const sidebarHeight = ref<number>(initial.sidebarHeight);
+  const responsePosition = ref<PanelPosition>(initial.responsePosition);
   const responseSizePercent = ref<number>(initial.responseSizePercent);
 
   function applyTheme(mode: ThemeMode) {
@@ -50,7 +56,15 @@ export const useSettingsStore = defineStore('settings', () => {
   applyTheme(theme.value);
 
   watch(
-    [theme, sidebarPosition, sidebarWidth, responsePosition, responseSizePercent],
+    [
+      theme,
+      navbarPosition,
+      sidebarPosition,
+      sidebarWidth,
+      sidebarHeight,
+      responsePosition,
+      responseSizePercent,
+    ],
     () => {
       applyTheme(theme.value);
       try {
@@ -58,8 +72,10 @@ export const useSettingsStore = defineStore('settings', () => {
           SETTINGS_KEY,
           JSON.stringify({
             theme: theme.value,
+            navbarPosition: navbarPosition.value,
             sidebarPosition: sidebarPosition.value,
             sidebarWidth: sidebarWidth.value,
+            sidebarHeight: sidebarHeight.value,
             responsePosition: responsePosition.value,
             responseSizePercent: responseSizePercent.value,
           } satisfies AppSettings),
@@ -76,16 +92,20 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function resetDefaults() {
     theme.value = DEFAULT_SETTINGS.theme;
+    navbarPosition.value = DEFAULT_SETTINGS.navbarPosition;
     sidebarPosition.value = DEFAULT_SETTINGS.sidebarPosition;
     sidebarWidth.value = DEFAULT_SETTINGS.sidebarWidth;
+    sidebarHeight.value = DEFAULT_SETTINGS.sidebarHeight;
     responsePosition.value = DEFAULT_SETTINGS.responsePosition;
     responseSizePercent.value = DEFAULT_SETTINGS.responseSizePercent;
   }
 
   return {
     theme,
+    navbarPosition,
     sidebarPosition,
     sidebarWidth,
+    sidebarHeight,
     responsePosition,
     responseSizePercent,
     toggleTheme,
