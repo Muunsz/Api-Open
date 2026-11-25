@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { WorkspaceRole } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { type AuthUser, SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { WorkspaceService } from './workspace.service';
@@ -19,5 +28,36 @@ export class WorkspaceController {
       user.id,
       name || 'Team Workspace',
     );
+  }
+
+  @Get(':workspaceId/members')
+  listMembers(
+    @Param('workspaceId') workspaceId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.workspaceService.listMembers(workspaceId, user.id);
+  }
+
+  @Post(':workspaceId/invite')
+  invite(
+    @Param('workspaceId') workspaceId: string,
+    @CurrentUser() user: AuthUser,
+    @Body() body: { email: string; role?: WorkspaceRole },
+  ) {
+    return this.workspaceService.inviteMember(
+      workspaceId,
+      user.id,
+      body.email,
+      body.role ?? 'EDITOR',
+    );
+  }
+
+  @Delete(':workspaceId/members/:memberId')
+  removeMember(
+    @Param('workspaceId') workspaceId: string,
+    @Param('memberId') memberId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.workspaceService.removeMember(workspaceId, user.id, memberId);
   }
 }

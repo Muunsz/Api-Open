@@ -29,11 +29,28 @@ export type BodyMode =
   | 'binary'
   | 'graphql';
 
+export interface FormDataItem {
+  id: string;
+  key: string;
+  type: 'text' | 'file';
+  value: string;
+  fileName?: string;
+  fileContentBase64?: string;
+  mimeType?: string;
+  enabled: boolean;
+}
+
 export interface BodyConfig {
   mode: BodyMode;
   raw?: string;
   rawType?: 'json' | 'xml' | 'html' | 'text';
   urlencoded?: KeyValueItem[];
+  formData?: FormDataItem[];
+  binary?: {
+    fileName: string;
+    contentBase64: string;
+    mimeType?: string;
+  };
   graphql?: {
     query: string;
     variables?: string;

@@ -75,6 +75,8 @@ function createDefaultTab(partial?: Partial<RequestTab>): RequestTab {
       raw: '{\n  \n}',
       rawType: 'json',
       urlencoded: [createEmptyRow()],
+      formData: [{ id: uid(), key: '', type: 'text', value: '', enabled: true }],
+      binary: { fileName: '', contentBase64: '', mimeType: '' },
       graphql: { query: '', variables: '{}' },
     },
     preRequestScript: partial?.preRequestScript ?? '',
@@ -222,6 +224,12 @@ export const useTabsStore = defineStore('tabs', () => {
         key: r(row.key),
         value: r(row.value),
       })),
+      formData: tab.body.formData?.map((row) => ({
+        ...row,
+        key: r(row.key),
+        value: row.type === 'text' ? r(row.value) : row.value,
+      })),
+      binary: tab.body.binary,
       graphql: tab.body.graphql
         ? {
             query: r(tab.body.graphql.query),

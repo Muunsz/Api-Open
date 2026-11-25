@@ -15,6 +15,19 @@ export interface WorkspaceDto {
   role: 'OWNER' | 'EDITOR' | 'VIEWER';
 }
 
+export interface WorkspaceMemberDto {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  role: 'OWNER' | 'EDITOR' | 'VIEWER';
+  user: {
+    id: string;
+    email: string;
+    name?: string | null;
+    avatarUrl?: string | null;
+  };
+}
+
 export interface ApiRequestDto {
   id: string;
   collectionId: string;
@@ -84,6 +97,31 @@ export const workspaceApi = {
       method: 'POST',
       body: JSON.stringify({ name }),
     }),
+
+  listMembers: (token: string, workspaceId: string) =>
+    apiFetch<WorkspaceMemberDto[]>(`/workspaces/${workspaceId}/members`, token),
+
+  inviteMember: (
+    token: string,
+    workspaceId: string,
+    email: string,
+    role: 'OWNER' | 'EDITOR' | 'VIEWER',
+  ) =>
+    apiFetch<{ addedImmediately: boolean; emailSent: boolean; email: string }>(
+      `/workspaces/${workspaceId}/invite`,
+      token,
+      {
+        method: 'POST',
+        body: JSON.stringify({ email, role }),
+      },
+    ),
+
+  removeMember: (token: string, workspaceId: string, memberId: string) =>
+    apiFetch<{ deleted: boolean }>(
+      `/workspaces/${workspaceId}/members/${memberId}`,
+      token,
+      { method: 'DELETE' },
+    ),
 
   listCollections: (token: string, workspaceId: string) =>
     apiFetch<CollectionDto[]>(`/workspaces/${workspaceId}/collections`, token),

@@ -1,23 +1,33 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import type { EnvVariable, HttpMethod } from '@api-open/shared';
+import type { EnvVariable, FormDataItem, HttpMethod } from '@api-open/shared';
 import {
   Delete,
+  Document,
   Download,
   Folder,
   Plus,
   Setting,
   Upload,
+  User,
   VideoPlay,
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { executeProxyRequest } from './api/proxy';
 import CollectionRunnerDialog from './components/CollectionRunnerDialog.vue';
 import KeyValueTable from './components/KeyValueTable.vue';
 import RealtimePanel from './components/RealtimePanel.vue';
 import { useTabsStore } from './stores/tabs';
 import { type CollectionTreeNode, useWorkspaceStore } from './stores/workspace';
+import { generateCollectionDocsMarkdown } from './utils/docsGenerator';
+import {
+  type GqlFieldSummary,
+  GRAPHQL_INTROSPECTION_QUERY,
+  parseIntrospectionResponse,
+} from './utils/graphqlIntrospection';
 import { exportPostmanCollection } from './utils/postmanConverter';
 import type { SnippetLang } from './utils/snippetGenerator';
+import { resolveVariables } from './utils/variables';
 
 const store = useTabsStore();
 const ws = useWorkspaceStore();
@@ -66,10 +76,29 @@ const curlInput = ref('');
 const snippetDialogVisible = ref(false);
 const snippetLang = ref<SnippetLang>('curl');
 
-// Postman Import & Collection Runner
+// Postman / OpenAPI Import & Collection Runner
 const postmanFileInput = ref<HTMLInputElement | null>(null);
+const openApiFileInput = ref<HTMLInputElement | null>(null);
 const runnerVisible = ref(false);
 const runnerTargetNode = ref<CollectionTreeNode | null>(null);
+
+// API Docs Modal
+const docsVisible = ref(false);
+const docsTitle = ref('');
+const docsMarkdown = ref('');
+
+// Team Workspace Modal
+const teamDialogVisible = ref(false);
+const newTeamName = ref('');
+const inviteEmail = ref('');
+const inviteRole = ref<'OWNER' | 'EDITOR' | 'VIEWER'>('EDITOR');
+const inviting = ref(false);
+
+// GraphQL Introspection Modal
+const gqlSchemaVisible = ref(false);
+const gqlLoading = ref(false);
+const gqlQueries = ref<GqlFieldSummary[]>([]);
+const gqlMutations = ref<GqlFieldSummary[]>([]);
 
 let syncingUrl = false;
 const tab = computed(() => store.activeTab);
@@ -146,6 +175,21 @@ const formattedBody = computed(() => {
 const responseHeadersList = computed(() => {
   const headers = tab.value?.response?.headers ?? {};
   return Object.entries(headers).map(([key, value]) => ({ key, value }));
+});
+
+const responseCookiesList = computed(() => {
+  const raw = tab.value?.response?.headers?.['set-cookie'];
+  if (!raw) return [];
+  return raw.split(/,(?=\s*[^;=]+=[^;]+)/).map((cookieStr) => {
+    const parts = cookieStr.split(';').map((p) => p.trim());
+    const [nameVal, ...attrs] = parts;
+    const eqIdx = nameVal.indexOf('=');
+    return {
+      name: eqIdx >= 0 ? nameVal.slice(0, eqIdx) : nameVal,
+      value: eqIdx >= 0 ? nameVal.slice(eqIdx + 1) : '',
+      attributes: attrs.join('; '),
+    };
+  });
 });
 
 const isImageResponse = computed(() => {
@@ -305,6 +349,133 @@ async function handlePostmanFileSelected(e: Event) {
   }
 }
 
+function triggerOpenApiImport() {
+  openApiFileInput.value?.click();
+}
+
+async function handleOpenApiFileSelected(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    await ws.importOpenApiJson(text);
+    ElMessage.success('OpenAPI spec imported');
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : 'OpenAPI import failed');
+  } finally {
+    input.value = '';
+  }
+}
+
+function openDocsModal(node: CollectionTreeNode) {
+  docsTitle.value = node.label;
+  docsMarkdown.value = generateCollectionDocsMarkdown(node);
+  docsVisible.value = true;
+}
+
+function downloadDocsMarkdown() {
+  const blob = new Blob([docsMarkdown.value], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${docsTitle.value.replace(/[^a-zA-Z0-9_-]/g, '_')}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function handleCreateTeam() {
+  if (!newTeamName.value.trim()) return;
+  await ws.createTeamWorkspace(newTeamName.value);
+  newTeamName.value = '';
+  ElMessage.success('Team workspace created');
+}
+
+async function handleInviteMember() {
+  if (!inviteEmail.value.trim()) return;
+  inviting.value = true;
+  try {
+    const res = await ws.inviteMember(inviteEmail.value, inviteRole.value);
+    inviteEmail.value = '';
+    ElMessage.success(
+      res.addedImmediately
+        ? 'Member added & invitation email sent'
+        : 'Invitation email sent',
+    );
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : 'Invite failed');
+  } finally {
+    inviting.value = false;
+  }
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      resolve(result.includes(',') ? result.split(',')[1] : result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function addFormDataRow() {
+  if (!tab.value) return;
+  if (!tab.value.body.formData) tab.value.body.formData = [];
+  tab.value.body.formData.push({
+    id: Math.random().toString(36).slice(2, 10),
+    key: '',
+    type: 'text',
+    value: '',
+    enabled: true,
+  });
+}
+
+async function handleFormDataFileChange(row: FormDataItem, e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  row.fileName = file.name;
+  row.mimeType = file.type || 'application/octet-stream';
+  row.fileContentBase64 = await fileToBase64(file);
+}
+
+async function handleBinaryFileChange(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file || !tab.value) return;
+  tab.value.body.binary = {
+    fileName: file.name,
+    mimeType: file.type || 'application/octet-stream',
+    contentBase64: await fileToBase64(file),
+  };
+}
+
+async function fetchGraphqlSchema() {
+  if (!tab.value?.url.trim()) return;
+  gqlLoading.value = true;
+  try {
+    const resolvedUrl = resolveVariables(tab.value.url.trim(), ws.activeVariablesMap);
+    const res = await executeProxyRequest({
+      method: 'POST',
+      url: resolvedUrl,
+      headers: { 'Content-Type': 'application/json' },
+      body: {
+        mode: 'graphql',
+        graphql: { query: GRAPHQL_INTROSPECTION_QUERY, variables: '{}' },
+      },
+    });
+    const parsed = parseIntrospectionResponse(res.body);
+    gqlQueries.value = parsed.queries;
+    gqlMutations.value = parsed.mutations;
+    gqlSchemaVisible.value = true;
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : 'Introspection failed');
+  } finally {
+    gqlLoading.value = false;
+  }
+}
+
 function openEnvDialog() {
   if (!ws.isAuthenticated) {
     authDialogVisible.value = true;
@@ -406,6 +577,10 @@ async function saveEnvVars() {
             Envs
           </el-button>
 
+          <el-button size="small" :icon="User" @click="teamDialogVisible = true">
+            Team
+          </el-button>
+
           <el-dropdown>
             <el-button size="small" plain>
               {{ ws.user?.email }}
@@ -434,16 +609,22 @@ async function saveEnvVars() {
             <template v-if="ws.isAuthenticated">
               <div class="sidebar-toolbar">
                 <el-text size="small" type="info">Collections</el-text>
-                <div style="display: flex; gap: 4px">
-                  <el-button
-                    size="small"
-                    :icon="Upload"
-                    link
-                    type="primary"
-                    @click="triggerPostmanImport"
-                  >
-                    Import
-                  </el-button>
+                <div style="display: flex; gap: 4px; align-items: center">
+                  <el-dropdown trigger="click">
+                    <el-button size="small" :icon="Upload" link type="primary">
+                      Import
+                    </el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item @click="triggerPostmanImport">
+                          Postman v2.1 (.json)
+                        </el-dropdown-item>
+                        <el-dropdown-item @click="triggerOpenApiImport">
+                          OpenAPI / Swagger (.json)
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
                   <el-button
                     size="small"
                     :icon="Plus"
@@ -460,6 +641,13 @@ async function saveEnvVars() {
                   accept=".json,application/json"
                   style="display: none"
                   @change="handlePostmanFileSelected"
+                />
+                <input
+                  ref="openApiFileInput"
+                  type="file"
+                  accept=".json,application/json"
+                  style="display: none"
+                  @change="handleOpenApiFileSelected"
                 />
               </div>
               <el-empty
@@ -492,6 +680,14 @@ async function saveEnvVars() {
                         size="small"
                         title="Run Collection"
                         @click.stop="openRunner(data)"
+                      />
+                      <el-button
+                        v-if="data.kind === 'collection'"
+                        :icon="Document"
+                        link
+                        size="small"
+                        title="View API Docs"
+                        @click.stop="openDocsModal(data)"
                       />
                       <el-button
                         v-if="data.kind === 'collection'"
@@ -680,8 +876,10 @@ async function saveEnvVars() {
             <div class="body-controls">
               <el-radio-group v-model="tab.body.mode" size="small">
                 <el-radio-button value="none">none</el-radio-button>
-                <el-radio-button value="raw">raw</el-radio-button>
+                <el-radio-button value="form-data">form-data</el-radio-button>
                 <el-radio-button value="urlencoded">x-www-form-urlencoded</el-radio-button>
+                <el-radio-button value="raw">raw</el-radio-button>
+                <el-radio-button value="binary">binary</el-radio-button>
                 <el-radio-button value="graphql">GraphQL</el-radio-button>
               </el-radio-group>
 
@@ -700,6 +898,15 @@ async function saveEnvVars() {
                   Beautify JSON
                 </el-button>
               </template>
+
+              <el-button
+                v-if="tab.body.mode === 'graphql'"
+                size="small"
+                :loading="gqlLoading"
+                @click="fetchGraphqlSchema"
+              >
+                Fetch Schema
+              </el-button>
             </div>
 
             <el-input
@@ -710,6 +917,68 @@ async function saveEnvVars() {
               class="code-area"
               placeholder="Request body..."
             />
+
+            <div v-else-if="tab.body.mode === 'form-data'">
+              <el-table :data="tab.body.formData ?? []" size="small" border>
+                <el-table-column width="46" align="center">
+                  <template #default="{ row }">
+                    <el-checkbox v-model="row.enabled" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="Key" width="180">
+                  <template #default="{ row }">
+                    <el-input v-model="row.key" size="small" placeholder="field" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="Type" width="100">
+                  <template #default="{ row }">
+                    <el-select v-model="row.type" size="small">
+                      <el-option label="Text" value="text" />
+                      <el-option label="File" value="file" />
+                    </el-select>
+                  </template>
+                </el-table-column>
+                <el-table-column label="Value">
+                  <template #default="{ row }">
+                    <el-input
+                      v-if="row.type === 'text'"
+                      v-model="row.value"
+                      size="small"
+                      placeholder="Value"
+                    />
+                    <div v-else style="display: flex; align-items: center; gap: 8px">
+                      <input
+                        type="file"
+                        @change="(e: Event) => handleFormDataFileChange(row, e)"
+                      />
+                      <el-text v-if="row.fileName" size="small" type="info">
+                        {{ row.fileName }}
+                      </el-text>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column width="54" align="center">
+                  <template #default="{ $index }">
+                    <el-button
+                      :icon="Delete"
+                      link
+                      type="danger"
+                      @click="tab.body.formData?.splice($index, 1)"
+                    />
+                  </template>
+                </el-table-column>
+              </el-table>
+              <el-button size="small" :icon="Plus" style="margin-top: 8px" @click="addFormDataRow">
+                Add Field
+              </el-button>
+            </div>
+
+            <div v-else-if="tab.body.mode === 'binary'" class="binary-box">
+              <input type="file" @change="handleBinaryFileChange" />
+              <el-text v-if="tab.body.binary?.fileName" type="info" size="small">
+                Selected: {{ tab.body.binary.fileName }} ({{ tab.body.binary.mimeType }})
+              </el-text>
+            </div>
 
             <KeyValueTable
               v-else-if="tab.body.mode === 'urlencoded' && tab.body.urlencoded"
@@ -814,6 +1083,14 @@ async function saveEnvVars() {
               <el-table :data="responseHeadersList" size="small" border>
                 <el-table-column prop="key" label="Header" width="240" />
                 <el-table-column prop="value" label="Value" />
+              </el-table>
+            </el-tab-pane>
+
+            <el-tab-pane :label="`Cookies (${responseCookiesList.length})`" name="cookies">
+              <el-table :data="responseCookiesList" size="small" border>
+                <el-table-column prop="name" label="Name" width="180" />
+                <el-table-column prop="value" label="Value" />
+                <el-table-column prop="attributes" label="Attributes" />
               </el-table>
             </el-tab-pane>
 
@@ -1034,6 +1311,91 @@ async function saveEnvVars() {
       v-model:visible="runnerVisible"
       :collection-node="runnerTargetNode"
     />
+
+    <!-- API Documentation Modal -->
+    <el-dialog v-model="docsVisible" :title="`API Docs: ${docsTitle}`" width="680px">
+      <div class="body-controls">
+        <el-button size="small" type="primary" @click="downloadDocsMarkdown">
+          Download .md
+        </el-button>
+      </div>
+      <pre class="response-pre">{{ docsMarkdown }}</pre>
+    </el-dialog>
+
+    <!-- Team Workspace & Invite Modal -->
+    <el-dialog v-model="teamDialogVisible" title="Team Workspaces & Members" width="620px">
+      <div class="env-create-row">
+        <el-input
+          v-model="newTeamName"
+          size="small"
+          placeholder="New team workspace name"
+          style="max-width: 240px"
+        />
+        <el-button size="small" type="primary" @click="handleCreateTeam">
+          Create Team Workspace
+        </el-button>
+      </div>
+
+      <el-divider>Invite Member to Current Workspace</el-divider>
+      <div class="env-create-row">
+        <el-input
+          v-model="inviteEmail"
+          size="small"
+          placeholder="teammate@example.com"
+          style="max-width: 240px"
+        />
+        <el-select v-model="inviteRole" size="small" style="width: 110px">
+          <el-option label="Editor" value="EDITOR" />
+          <el-option label="Viewer" value="VIEWER" />
+          <el-option label="Owner" value="OWNER" />
+        </el-select>
+        <el-button
+          size="small"
+          type="primary"
+          :loading="inviting"
+          @click="handleInviteMember"
+        >
+          Send Invite
+        </el-button>
+      </div>
+
+      <el-table :data="ws.members" size="small" border>
+        <el-table-column label="Email" prop="user.email" />
+        <el-table-column label="Role" prop="role" width="100" />
+        <el-table-column width="70" align="center">
+          <template #default="{ row }">
+            <el-button
+              v-if="row.userId !== ws.user?.id"
+              :icon="Delete"
+              link
+              type="danger"
+              size="small"
+              @click="ws.removeMember(row.id)"
+            />
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <!-- GraphQL Schema Introspection Modal -->
+    <el-dialog v-model="gqlSchemaVisible" title="GraphQL Schema" width="680px">
+      <el-tabs>
+        <el-tab-pane :label="`Queries (${gqlQueries.length})`">
+          <el-table :data="gqlQueries" size="small" border max-height="360">
+            <el-table-column prop="name" label="Field" width="180" />
+            <el-table-column prop="args" label="Arguments" />
+            <el-table-column prop="returnType" label="Returns" width="160" />
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane :label="`Mutations (${gqlMutations.length})`">
+          <el-table :data="gqlMutations" size="small" border max-height="360">
+            <el-table-column prop="name" label="Field" width="180" />
+            <el-table-column prop="args" label="Arguments" />
+            <el-table-column prop="returnType" label="Returns" width="160" />
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+    </el-dialog>
   </el-container>
 </template>
 
@@ -1216,5 +1578,13 @@ async function saveEnvVars() {
   align-items: center;
   gap: 8px;
   font-size: 13px;
+}
+.binary-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px dashed #dcdfe6;
+  border-radius: 6px;
 }
 </style>

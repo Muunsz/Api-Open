@@ -8,8 +8,10 @@ import {
   type CollectionDto,
   type EnvironmentDto,
   type WorkspaceDto,
+  type WorkspaceMemberDto,
   workspaceApi,
 } from '../api/workspace';
+import { parseOpenApiSpec } from '../utils/openApiConverter';
 import {
   type ImportedCollectionNode,
   parsePostmanCollection,
@@ -31,6 +33,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const activeWorkspaceId = ref<string>('');
   const collections = ref<CollectionDto[]>([]);
   const environments = ref<EnvironmentDto[]>([]);
+  const members = ref<WorkspaceMemberDto[]>([]);
   const activeEnvId = ref<string>('');
   const loadingData = ref(false);
 
@@ -158,12 +161,49 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function loadWorkspaceData(workspaceId: string) {
     if (!accessToken.value || !workspaceId) return;
-    const [cols, envs] = await Promise.all([
+    const [cols, envs, mems] = await Promise.all([
       workspaceApi.listCollections(accessToken.value, workspaceId),
       workspaceApi.listEnvironments(accessToken.value, workspaceId),
+      workspaceApi.listMembers(accessToken.value, workspaceId),
     ]);
     collections.value = cols;
     environments.value = envs;
+    members.value = mems;
+  }
+
+  async function createTeamWorkspace(name: string) {
+    if (!accessToken.value) return;
+    const created = await workspaceApi.createWorkspace(accessToken.value, name);
+    await loadWorkspaces();
+    activeWorkspaceId.value = created.id;
+    await loadWorkspaceData(created.id);
+  }
+
+  async function inviteMember(
+    email: string,
+    role: 'OWNER' | 'EDITOR' | 'VIEWER' = 'EDITOR',
+  ) {
+    if (!accessToken.value || !activeWorkspaceId.value) {
+      throw new Error('Sign in first');
+    }
+    const res = await workspaceApi.inviteMember(
+      accessToken.value,
+      activeWorkspaceId.value,
+      email,
+      role,
+    );
+    await loadWorkspaceData(activeWorkspaceId.value);
+    return res;
+  }
+
+  async function removeMember(memberId: string) {
+    if (!accessToken.value || !activeWorkspaceId.value) return;
+    await workspaceApi.removeMember(
+      accessToken.value,
+      activeWorkspaceId.value,
+      memberId,
+    );
+    await loadWorkspaceData(activeWorkspaceId.value);
   }
 
   async function createCollection(name: string, parentId?: string) {
@@ -245,6 +285,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     await loadWorkspaceData(activeWorkspaceId.value);
   }
 
+  async function importOpenApiJson(jsonText: string) {
+    if (!accessToken.value || !activeWorkspaceId.value) {
+      throw new Error('Sign in first to import OpenAPI spec');
+    }
+    const root = parseOpenApiSpec(jsonText);
+    await saveImportedNode(root);
+    await loadWorkspaceData(activeWorkspaceId.value);
+  }
+
   return {
     user,
     accessToken,
@@ -254,6 +303,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     collections,
     collectionTree,
     environments,
+    members,
     activeEnvId,
     activeVariablesMap,
     loadingData,
@@ -264,6 +314,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     signOut,
     loadWorkspaces,
     loadWorkspaceData,
+    createTeamWorkspace,
+    inviteMember,
+    removeMember,
     createCollection,
     deleteCollection,
     deleteRequest,
@@ -271,5 +324,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     updateEnvironment,
     deleteEnvironment,
     importPostmanJson,
+    importOpenApiJson,
   };
 });

@@ -87,7 +87,7 @@ export class ProxyService {
     method: string,
     bodyConfig: BodyConfig | undefined,
     headers: Headers,
-  ): string | undefined {
+  ): string | FormData | Blob | undefined {
     if (!bodyConfig || bodyConfig.mode === 'none') return undefined;
     if (method === 'GET' || method === 'HEAD') return undefined;
 
@@ -118,6 +118,36 @@ export class ProxyService {
           }
         }
         return params.toString();
+      }
+      case 'form-data': {
+        // Let fetch set multipart/form-data boundary automatically
+        headers.delete('content-type');
+        const form = new FormData();
+        for (const item of bodyConfig.formData ?? []) {
+          if (!item.enabled || !item.key) continue;
+          if (item.type === 'file' && item.fileContentBase64) {
+            const buf = Buffer.from(item.fileContentBase64, 'base64');
+            const blob = new Blob([buf], {
+              type: item.mimeType || 'application/octet-stream',
+            });
+            form.append(item.key, blob, item.fileName || 'file');
+          } else {
+            form.append(item.key, item.value ?? '');
+          }
+        }
+        return form;
+      }
+      case 'binary': {
+        if (!bodyConfig.binary?.contentBase64) return undefined;
+        if (!headers.has('content-type')) {
+          headers.set(
+            'content-type',
+            bodyConfig.binary.mimeType || 'application/octet-stream',
+          );
+        }
+        return new Blob([Buffer.from(bodyConfig.binary.contentBase64, 'base64')], {
+          type: bodyConfig.binary.mimeType || 'application/octet-stream',
+        });
       }
       case 'graphql': {
         if (!headers.has('content-type')) {
