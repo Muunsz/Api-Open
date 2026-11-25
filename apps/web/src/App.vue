@@ -1828,7 +1828,7 @@ async function saveEnvVars() {
   background: var(--ao-surface);
   border-bottom: 1px solid var(--ao-border);
   padding: 8px 16px;
-  min-height: 52px;
+  min-height: 58px;
 }
 .top-left {
   display: flex;
@@ -1850,7 +1850,7 @@ async function saveEnvVars() {
   padding: 0;
 }
 .brand-full-logo {
-  height: 34px;
+  height: 44px;
   width: auto;
   object-fit: contain;
   display: block;
