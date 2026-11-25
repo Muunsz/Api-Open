@@ -259,7 +259,7 @@ onUnmounted(() => {
   font-size: 13px;
 }
 .logs-section {
-  border-top: 1px solid #e4e7ed;
+  border-top: 1px solid var(--ao-border);
   padding-top: 10px;
   flex: 1;
   display: flex;
@@ -280,10 +280,10 @@ onUnmounted(() => {
   overflow-y: auto;
 }
 .log-row {
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--ao-border);
   border-radius: 6px;
   padding: 8px 10px;
-  background: #fafafa;
+  background: var(--ao-surface-elevated);
 }
 .log-meta {
   display: flex;

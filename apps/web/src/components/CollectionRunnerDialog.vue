@@ -265,7 +265,8 @@ async function startRun() {
   overflow-y: auto;
 }
 .runner-item {
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--ao-border);
+  background: var(--ao-surface-elevated);
   border-radius: 6px;
   padding: 10px 12px;
 }

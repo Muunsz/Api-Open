@@ -808,9 +808,13 @@ async function saveEnvVars() {
                   <div class="tree-row">
                     <span class="tree-label">
                       <el-icon v-if="data.kind === 'collection'"><Folder /></el-icon>
-                      <el-tag v-else size="small" effect="plain">
+                      <span
+                        v-else
+                        class="method-badge"
+                        :class="`method-${data.request?.method}`"
+                      >
                         {{ data.request?.method }}
-                      </el-tag>
+                      </span>
                       <span class="tree-text">{{ data.label }}</span>
                     </span>
                     <span class="tree-actions">
@@ -888,7 +892,12 @@ async function saveEnvVars() {
                 class="history-item"
                 @click="store.addTab({ method: item.method, url: item.url, name: item.url })"
               >
-                <el-tag size="small" effect="plain">{{ item.method }}</el-tag>
+                <span
+                  class="method-badge"
+                  :class="`method-${item.method}`"
+                >
+                  {{ item.method }}
+                </span>
                 <span class="history-url" :title="item.url">{{ item.url }}</span>
               </div>
             </div>
@@ -925,9 +934,11 @@ async function saveEnvVars() {
           />
         </el-tabs>
 
-        <div class="request-bar">
+        <div class="request-bar kt-card kt-card-bordered">
           <el-select v-model="tab.method" class="method-select">
-            <el-option v-for="m in methods" :key="m" :label="m" :value="m" />
+            <el-option v-for="m in methods" :key="m" :label="m" :value="m">
+              <span class="method-badge" :class="`method-${m}`">{{ m }}</span>
+            </el-option>
           </el-select>
           <el-input
             v-model="tab.url"
@@ -956,7 +967,7 @@ async function saveEnvVars() {
           class="request-response-split"
           :class="{ 'split-horizontal': settings.responsePosition === 'right' }"
         >
-        <div class="request-pane">
+        <div class="request-pane kt-card kt-card-bordered">
         <el-tabs v-model="activeRequestTab" class="request-tabs">
           <el-tab-pane label="Params" name="params">
             <KeyValueTable
@@ -1758,18 +1769,11 @@ async function saveEnvVars() {
   </el-container>
 </template>
 
-<style>
-html,
-body {
-  margin: 0;
-  padding: 0;
-}
-</style>
-
 <style scoped>
 .app-shell {
   height: 100vh;
-  background: #ffffff;
+  background: var(--ao-bg);
+  color: var(--ao-text);
 }
 .top-bar {
   display: flex;
@@ -1777,9 +1781,10 @@ body {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--ao-surface);
+  border-bottom: 1px solid var(--ao-border);
   padding: 8px 16px;
-  min-height: 48px;
+  min-height: 52px;
 }
 .top-left {
   display: flex;
@@ -1794,8 +1799,8 @@ body {
   align-items: center;
 }
 .brand-full-logo {
-  height: 40px;
-  width: 40px;
+  height: 38px;
+  width: 38px;
   object-fit: contain;
   display: block;
 }
@@ -1827,14 +1832,15 @@ body {
   flex-direction: row-reverse;
 }
 .sidebar {
-  border-right: 1px solid #e4e7ed;
+  background: var(--ao-surface);
+  border-right: 1px solid var(--ao-border);
   padding: 8px 12px;
   overflow-y: auto;
   flex-shrink: 0;
 }
 .sidebar-on-right .sidebar {
   border-right: none;
-  border-left: 1px solid #e4e7ed;
+  border-left: 1px solid var(--ao-border);
 }
 .sidebar-resizer {
   width: 4px;
@@ -1844,7 +1850,7 @@ body {
   flex-shrink: 0;
 }
 .sidebar-resizer:hover {
-  background: #409eff;
+  background: var(--ao-accent);
 }
 .request-response-split {
   display: flex;
@@ -1861,6 +1867,8 @@ body {
   min-width: 0;
   min-height: 160px;
   overflow-y: auto;
+  background: var(--ao-surface);
+  padding: 10px 14px;
 }
 .response-resizer {
   height: 5px;
@@ -1876,7 +1884,7 @@ body {
   cursor: col-resize;
 }
 .response-resizer:hover {
-  background: #409eff;
+  background: var(--ao-accent);
 }
 .sidebar-toolbar {
   display: flex;
@@ -1920,13 +1928,15 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 7px 9px;
   border-radius: 6px;
   cursor: pointer;
-  border: 1px solid #f0f2f5;
+  border: 1px solid var(--ao-border);
+  background: var(--ao-surface-elevated);
+  transition: background 0.15s;
 }
 .history-item:hover {
-  background: #f5f7fa;
+  background: var(--ao-hover);
 }
 .history-url {
   font-size: 12px;
@@ -1940,11 +1950,14 @@ body {
   gap: 10px;
   padding: 12px 16px;
   overflow-y: auto;
+  background: var(--ao-bg);
 }
 .request-bar {
   display: flex;
   gap: 8px;
   align-items: center;
+  background: var(--ao-surface);
+  padding: 10px 12px;
 }
 .method-select {
   width: 120px;
@@ -1976,6 +1989,7 @@ body {
   gap: 8px;
 }
 .response-section {
+  background: var(--ao-surface);
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -1993,10 +2007,12 @@ body {
 .response-meta {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
 }
 .response-pre {
-  background: #f5f7fa;
-  border: 1px solid #e4e7ed;
+  background: var(--ao-code-bg);
+  border: 1px solid var(--ao-border);
+  color: var(--ao-text);
   border-radius: 6px;
   padding: 12px;
   font-family: Consolas, Monaco, 'Courier New', monospace;
@@ -2010,7 +2026,7 @@ body {
 .image-preview {
   max-width: 100%;
   max-height: 320px;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--ao-border);
   border-radius: 6px;
 }
 .env-create-row,
@@ -2050,7 +2066,7 @@ body {
   flex-wrap: wrap;
   gap: 12px;
   padding: 12px;
-  border: 1px dashed #dcdfe6;
+  border: 1px dashed var(--ao-border);
   border-radius: 6px;
 }
 
@@ -2102,25 +2118,5 @@ body {
     width: 100% !important;
     height: auto !important;
   }
-}
-
-:global(html.dark) .app-shell {
-  background: #141414;
-  color: #e5eaf3;
-}
-:global(html.dark) .top-bar,
-:global(html.dark) .sidebar {
-  border-color: #303030;
-}
-:global(html.dark) .response-pre {
-  background: #1d1e1f;
-  border-color: #363637;
-  color: #e5eaf3;
-}
-:global(html.dark) .history-item {
-  border-color: #2b2b2c;
-}
-:global(html.dark) .history-item:hover {
-  background: #262727;
 }
 </style>

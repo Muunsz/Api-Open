@@ -42,7 +42,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const responseSizePercent = ref<number>(initial.responseSizePercent);
 
   function applyTheme(mode: ThemeMode) {
-    document.documentElement.classList.toggle('dark', mode === 'dark');
+    const isDark = mode === 'dark';
+    document.documentElement.classList.toggle('dark', isDark);
+    document.documentElement.setAttribute('data-kt-theme-mode', mode);
   }
 
   applyTheme(theme.value);

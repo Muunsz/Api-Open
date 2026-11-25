@@ -6,6 +6,7 @@ import 'element-plus/theme-chalk/dark/css-vars.css';
 import * as ElementPlusIconsVue from '@element-plus/icons-vue';
 import '@keenthemes/ktui';
 import '@keenthemes/ktui/dist/styles.css';
+import './styles/theme.css';
 import App from './App.vue';
 
 const app = createApp(App);

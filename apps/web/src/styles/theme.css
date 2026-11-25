@@ -1,0 +1,103 @@
+:root {
+  --ao-bg: #f6f8fb;
+  --ao-surface: #ffffff;
+  --ao-surface-elevated: #f9fafb;
+  --ao-border: #e4e7ed;
+  --ao-text: #1f2937;
+  --ao-text-muted: #6b7280;
+  --ao-code-bg: #f8fafc;
+  --ao-hover: #f1f5f9;
+  --ao-accent: #3b82f6;
+}
+
+html.dark {
+  color-scheme: dark;
+  --ao-bg: #0f1117;
+  --ao-surface: #161922;
+  --ao-surface-elevated: #1d212d;
+  --ao-border: #2a3040;
+  --ao-text: #e5e7eb;
+  --ao-text-muted: #9ca3af;
+  --ao-code-bg: #11141c;
+  --ao-hover: #232838;
+  --ao-accent: #60a5fa;
+
+  --el-bg-color: #161922;
+  --el-bg-color-overlay: #1d212d;
+  --el-fill-color-blank: #161922;
+  --el-fill-color-light: #1d212d;
+  --el-border-color: #2a3040;
+  --el-border-color-light: #232838;
+  --el-text-color-primary: #e5e7eb;
+  --el-text-color-regular: #d1d5db;
+  --el-text-color-secondary: #9ca3af;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--ao-bg);
+  color: var(--ao-text);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom subtle scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.55);
+}
+
+/* HTTP Method semantic colors */
+.method-badge {
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  text-transform: uppercase;
+}
+.method-GET {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+}
+.method-POST {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+}
+.method-PUT {
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.12);
+}
+.method-PATCH {
+  color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.12);
+}
+.method-DELETE {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+}
+.method-HEAD,
+.method-OPTIONS {
+  color: #06b6d4;
+  background: rgba(6, 182, 212, 0.12);
+}
+
+/* KTUI dark-mode card/badge alignment */
+html.dark .kt-card {
+  background-color: var(--ao-surface);
+  border-color: var(--ao-border);
+  color: var(--ao-text);
+}
