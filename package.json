@@ -1,0 +1,16 @@
+{
+  "name": "api-open",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=@api-open/web",
+    "dev:api": "npm run start:dev --workspace=@api-open/api",
+    "build": "npm run build --workspace=@api-open/shared && npm run build --workspace=@api-open/api && npm run build --workspace=@api-open/web",
+    "build:web": "npm run build --workspace=@api-open/web",
+    "build:api": "npm run build --workspace=@api-open/api"
+  }
+}
