@@ -669,8 +669,15 @@ async function saveEnvVars() {
           </el-button>
 
           <el-dropdown>
-            <el-button size="small" plain>
-              {{ ws.profile?.name || ws.user?.email }}
+            <el-button size="small" plain class="user-btn">
+              <el-avatar
+                :size="20"
+                :src="ws.profile?.avatarUrl || undefined"
+                style="margin-right: 6px"
+              >
+                {{ (ws.profile?.name || ws.user?.email || 'U').slice(0, 1).toUpperCase() }}
+              </el-avatar>
+              <span>{{ ws.profile?.name || ws.user?.email }}</span>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>

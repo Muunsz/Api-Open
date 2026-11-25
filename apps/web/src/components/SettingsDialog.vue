@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
+import { supabase } from '../lib/supabase';
 import { useSettingsStore } from '../stores/settings';
 import { useWorkspaceStore } from '../stores/workspace';
 
@@ -20,6 +21,8 @@ const activeTab = ref<'layout' | 'profile'>(props.initialTab ?? 'layout');
 const profileName = ref('');
 const profileAvatar = ref('');
 const savingProfile = ref(false);
+const uploadingAvatar = ref(false);
+const avatarFileInput = ref<HTMLInputElement | null>(null);
 const newPassword = ref('');
 const savingPassword = ref(false);
 
@@ -46,6 +49,54 @@ async function saveProfile() {
     ElMessage.error(err instanceof Error ? err.message : 'Failed to update profile');
   } finally {
     savingProfile.value = false;
+  }
+}
+
+async function handleAvatarUpload(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file || !ws.user) return;
+
+  if (!file.type.startsWith('image/')) {
+    ElMessage.warning('Please select an image file');
+    return;
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    ElMessage.warning('Max image size is 2 MB');
+    return;
+  }
+
+  if (!supabase) {
+    ElMessage.error('Supabase client is not configured');
+    return;
+  }
+
+  uploadingAvatar.value = true;
+  try {
+    const ext = file.name.split('.').pop() || 'png';
+    const path = `${ws.user.id}/avatar-${Date.now()}.${ext}`;
+    const { error } = await supabase.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true });
+
+    if (error) throw error;
+
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+    profileAvatar.value = data.publicUrl;
+    await ws.updateProfile({
+      name: profileName.value,
+      avatarUrl: profileAvatar.value,
+    });
+    ElMessage.success('Avatar uploaded & saved');
+  } catch (err) {
+    ElMessage.error(
+      err instanceof Error
+        ? `${err.message} (pastikan bucket "avatars" sudah dibuat Public di Supabase Storage)`
+        : 'Upload failed',
+    );
+  } finally {
+    uploadingAvatar.value = false;
+    input.value = '';
   }
 }
 
@@ -127,14 +178,30 @@ async function handleChangePassword() {
       <el-tab-pane label="Profile" name="profile">
         <template v-if="ws.isAuthenticated">
           <div class="profile-preview">
-            <el-avatar :size="52" :src="profileAvatar || undefined">
+            <el-avatar :size="56" :src="profileAvatar || undefined">
               {{ (profileName || ws.user?.email || 'U').slice(0, 1).toUpperCase() }}
             </el-avatar>
-            <div>
+            <div style="flex: 1">
               <div style="font-weight: 600">
                 {{ profileName || ws.user?.email }}
               </div>
               <el-text size="small" type="info">{{ ws.user?.email }}</el-text>
+              <div style="margin-top: 6px">
+                <el-button
+                  size="small"
+                  :loading="uploadingAvatar"
+                  @click="avatarFileInput?.click()"
+                >
+                  Upload Photo
+                </el-button>
+                <input
+                  ref="avatarFileInput"
+                  type="file"
+                  accept="image/*"
+                  style="display: none"
+                  @change="handleAvatarUpload"
+                />
+              </div>
             </div>
           </div>
 
