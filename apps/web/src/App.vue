@@ -8,6 +8,7 @@ import {
   Folder,
   Menu,
   Moon,
+  MoreFilled,
   Plus,
   Search,
   Setting,
@@ -826,49 +827,23 @@ async function saveEnvVars() {
         </div>
         <el-radio-group v-model="clientProtocol" size="small">
           <el-radio-button value="http">HTTP</el-radio-button>
-          <el-radio-button value="ws">WebSocket</el-radio-button>
+          <el-radio-button value="ws">WS</el-radio-button>
           <el-radio-button value="sse">SSE</el-radio-button>
         </el-radio-group>
       </div>
 
-      <div class="top-actions">
-        <el-button
-          size="small"
-          :icon="Search"
-          title="Search API (Ctrl+K)"
-          @click="openSearchPalette"
-        >
-          Search (Ctrl+K)
-        </el-button>
-        <el-button size="small" @click="curlDialogVisible = true">
-          Import cURL
-        </el-button>
-        <el-button size="small" @click="snippetDialogVisible = true">
-          Code
-        </el-button>
-        <el-button
-          size="small"
-          plain
-          title="Keyboard Shortcuts (Ctrl+/)"
-          @click="shortcutsDialogVisible = true"
-        >
-          ?
-        </el-button>
-        <el-button
-          size="small"
-          circle
-          :icon="settings.theme === 'dark' ? Sunny : Moon"
-          title="Toggle Dark / Light Mode"
-          @click="settings.toggleTheme"
-        />
-        <el-button
-          size="small"
-          circle
-          :icon="Setting"
-          title="Layout & Profile Settings"
-          @click="openSettings('layout')"
-        />
+      <button
+        type="button"
+        class="top-search-bar"
+        title="Search API (Ctrl+K)"
+        @click="openSearchPalette"
+      >
+        <el-icon><Search /></el-icon>
+        <span class="top-search-placeholder">Search API...</span>
+        <kbd class="kbd-key">Ctrl+K</kbd>
+      </button>
 
+      <div class="top-actions">
         <template v-if="ws.isAuthenticated">
           <el-select
             v-model="ws.activeWorkspaceId"
@@ -888,7 +863,7 @@ async function saveEnvVars() {
             v-model="ws.activeEnvId"
             size="small"
             clearable
-            placeholder="No Environment"
+            placeholder="No Env"
             class="top-select"
           >
             <el-option
@@ -898,25 +873,57 @@ async function saveEnvVars() {
               :value="env.id"
             />
           </el-select>
+        </template>
 
-          <el-button size="small" :icon="Setting" @click="openEnvDialog">
-            Envs
-          </el-button>
+        <el-button
+          size="small"
+          circle
+          :icon="settings.theme === 'dark' ? Sunny : Moon"
+          title="Toggle Dark / Light Mode"
+          @click="settings.toggleTheme"
+        />
+        <el-button
+          size="small"
+          circle
+          :icon="Setting"
+          title="Settings & Profile (Ctrl+,)"
+          @click="openSettings('layout')"
+        />
 
-          <el-button size="small" :icon="User" @click="teamDialogVisible = true">
-            Team
-          </el-button>
+        <el-dropdown trigger="click">
+          <el-button size="small" circle :icon="MoreFilled" title="Tools & Actions" />
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item @click="curlDialogVisible = true">
+                Import cURL (Ctrl+I)
+              </el-dropdown-item>
+              <el-dropdown-item @click="snippetDialogVisible = true">
+                Generate Code Snippet
+              </el-dropdown-item>
+              <el-dropdown-item v-if="ws.isAuthenticated" divided @click="openEnvDialog">
+                Manage Environments
+              </el-dropdown-item>
+              <el-dropdown-item v-if="ws.isAuthenticated" @click="teamDialogVisible = true">
+                Team & Members
+              </el-dropdown-item>
+              <el-dropdown-item divided @click="shortcutsDialogVisible = true">
+                Keyboard Shortcuts (Ctrl+/)
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
 
+        <template v-if="ws.isAuthenticated">
           <el-dropdown>
             <el-button size="small" plain class="user-btn">
               <el-avatar
                 :size="20"
                 :src="ws.profile?.avatarUrl || undefined"
-                style="margin-right: 6px"
+                style="margin-right: 6px; flex-shrink: 0"
               >
                 {{ (ws.profile?.name || ws.user?.email || 'U').slice(0, 1).toUpperCase() }}
               </el-avatar>
-              <span>{{ ws.profile?.name || ws.user?.email }}</span>
+              <span class="user-name-text">{{ ws.profile?.name || ws.user?.email }}</span>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
@@ -932,7 +939,6 @@ async function saveEnvVars() {
         </template>
 
         <template v-else>
-          <el-tag type="info" effect="plain">Guest Mode</el-tag>
           <el-button type="primary" size="small" @click="authDialogVisible = true">
             Sign In
           </el-button>
@@ -2133,10 +2139,45 @@ async function saveEnvVars() {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 .top-select {
-  width: 160px;
+  width: 125px;
+}
+.top-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 210px;
+  max-width: 300px;
+  flex: 1;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--ao-border);
+  background: var(--ao-surface-elevated);
+  color: var(--ao-text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.top-search-bar:hover {
+  border-color: var(--ao-accent);
+  background: var(--ao-hover);
+}
+.top-search-placeholder {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-name-text {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
 }
 .main-body {
   overflow: hidden;
@@ -2458,13 +2499,22 @@ async function saveEnvVars() {
     display: inline-flex;
   }
   .top-select {
-    width: 130px;
+    width: 110px;
+  }
+  .top-search-bar {
+    min-width: 150px;
   }
 }
 
 @media (max-width: 640px) {
   .top-bar {
     padding: 8px 12px;
+  }
+  .top-search-bar {
+    order: 3;
+    max-width: 100%;
+    width: 100%;
+    flex-basis: 100%;
   }
   .workspace {
     padding: 10px 12px;
