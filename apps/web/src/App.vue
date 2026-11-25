@@ -633,7 +633,7 @@ async function saveEnvVars() {
         />
         <div class="brand">
           <img
-            src="/API-OPEN-LOGO.png"
+            src="/API-OPEN-FULL.png"
             alt="Api-Open"
             class="brand-full-logo"
           />
@@ -1797,10 +1797,17 @@ async function saveEnvVars() {
 .brand {
   display: flex;
   align-items: center;
+  background: #1b2434;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+:global(html.dark) .brand {
+  background: transparent;
+  padding: 0;
 }
 .brand-full-logo {
-  height: 38px;
-  width: 38px;
+  height: 34px;
+  width: auto;
   object-fit: contain;
   display: block;
 }
