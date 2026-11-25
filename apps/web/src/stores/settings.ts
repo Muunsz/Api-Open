@@ -9,6 +9,7 @@ export interface AppSettings {
   theme: ThemeMode;
   navbarPosition: NavbarPosition;
   sidebarPosition: PanelPosition;
+  sidebarHidden: boolean;
   sidebarWidth: number;
   sidebarHeight: number;
   responsePosition: PanelPosition;
@@ -21,6 +22,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   navbarPosition: 'top',
   sidebarPosition: 'left',
+  sidebarHidden: false,
   sidebarWidth: 280,
   sidebarHeight: 220,
   responsePosition: 'bottom',
@@ -42,6 +44,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const theme = ref<ThemeMode>(initial.theme);
   const navbarPosition = ref<NavbarPosition>(initial.navbarPosition);
   const sidebarPosition = ref<PanelPosition>(initial.sidebarPosition);
+  const sidebarHidden = ref<boolean>(initial.sidebarHidden);
   const sidebarWidth = ref<number>(initial.sidebarWidth);
   const sidebarHeight = ref<number>(initial.sidebarHeight);
   const responsePosition = ref<PanelPosition>(initial.responsePosition);
@@ -81,6 +84,7 @@ export const useSettingsStore = defineStore('settings', () => {
       theme,
       navbarPosition,
       sidebarPosition,
+      sidebarHidden,
       sidebarWidth,
       sidebarHeight,
       responsePosition,
@@ -94,6 +98,7 @@ export const useSettingsStore = defineStore('settings', () => {
             theme: theme.value,
             navbarPosition: navbarPosition.value,
             sidebarPosition: sidebarPosition.value,
+            sidebarHidden: sidebarHidden.value,
             sidebarWidth: sidebarWidth.value,
             sidebarHeight: sidebarHeight.value,
             responsePosition: responsePosition.value,
@@ -114,6 +119,7 @@ export const useSettingsStore = defineStore('settings', () => {
     theme.value = DEFAULT_SETTINGS.theme;
     navbarPosition.value = DEFAULT_SETTINGS.navbarPosition;
     sidebarPosition.value = DEFAULT_SETTINGS.sidebarPosition;
+    sidebarHidden.value = DEFAULT_SETTINGS.sidebarHidden;
     sidebarWidth.value = DEFAULT_SETTINGS.sidebarWidth;
     sidebarHeight.value = DEFAULT_SETTINGS.sidebarHeight;
     responsePosition.value = DEFAULT_SETTINGS.responsePosition;
@@ -125,6 +131,7 @@ export const useSettingsStore = defineStore('settings', () => {
     effectiveTheme,
     navbarPosition,
     sidebarPosition,
+    sidebarHidden,
     sidebarWidth,
     sidebarHeight,
     responsePosition,

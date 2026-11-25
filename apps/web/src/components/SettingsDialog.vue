@@ -152,6 +152,13 @@ async function handleChangePassword() {
             </el-radio-group>
           </el-form-item>
 
+          <el-form-item label="Show Sidebar">
+            <el-switch
+              :model-value="!settings.sidebarHidden"
+              @update:model-value="(val: boolean) => (settings.sidebarHidden = !val)"
+            />
+          </el-form-item>
+
           <el-form-item
             v-if="settings.sidebarPosition === 'left' || settings.sidebarPosition === 'right'"
             :label="`Sidebar Width (${settings.sidebarWidth}px)`"

@@ -5,6 +5,8 @@ import {
   Delete,
   Document,
   Download,
+  Expand,
+  Fold,
   Folder,
   Menu,
   Moon,
@@ -131,7 +133,6 @@ const searchDialogVisible = ref(false);
 const searchQuery = ref('');
 const searchInputRef = ref<{ focus?: () => void } | null>(null);
 const shortcutsDialogVisible = ref(false);
-const sidebarHidden = ref(false);
 
 const shortcutsList = [
   { keys: 'Ctrl / Cmd + K', desc: 'Search API (Collections & History)' },
@@ -246,7 +247,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   }
   if (mod && key === 'b') {
     e.preventDefault();
-    sidebarHidden.value = !sidebarHidden.value;
+    settings.sidebarHidden = !settings.sidebarHidden;
     return;
   }
   if (mod && key === 'i') {
@@ -828,6 +829,14 @@ async function saveEnvVars() {
           size="small"
           @click="mobileSidebarVisible = true"
         />
+        <el-button
+          class="desktop-sidebar-toggle"
+          :icon="settings.sidebarHidden ? Expand : Fold"
+          circle
+          size="small"
+          title="Hide / Show Sidebar (Ctrl+B)"
+          @click="settings.sidebarHidden = !settings.sidebarHidden"
+        />
         <div class="brand">
           <img
             :src="
@@ -965,7 +974,7 @@ async function saveEnvVars() {
       :class="`sidebar-pos-${settings.sidebarPosition}`"
     >
       <el-aside
-        v-show="!sidebarHidden"
+        v-show="!settings.sidebarHidden"
         :width="isSidebarVertical ? '100%' : `${settings.sidebarWidth}px`"
         :style="isSidebarVertical ? { height: `${settings.sidebarHeight}px` } : {}"
         class="sidebar desktop-sidebar"
@@ -1138,7 +1147,7 @@ async function saveEnvVars() {
       </el-aside>
 
       <div
-        v-show="!sidebarHidden"
+        v-show="!settings.sidebarHidden"
         class="sidebar-resizer desktop-sidebar"
         :class="{ 'is-horizontal': isSidebarVertical }"
         title="Drag to resize sidebar"
@@ -2521,7 +2530,8 @@ async function saveEnvVars() {
 }
 
 @media (max-width: 900px) {
-  .desktop-sidebar {
+  .desktop-sidebar,
+  .desktop-sidebar-toggle {
     display: none;
   }
   .mobile-menu-btn {
