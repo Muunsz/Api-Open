@@ -969,7 +969,7 @@ async function saveEnvVars() {
           />
         </el-tabs>
 
-        <div class="request-bar kt-card kt-card-bordered">
+        <div class="request-bar">
           <el-select v-model="tab.method" class="method-select">
             <el-option v-for="m in methods" :key="m" :label="m" :value="m">
               <span class="method-badge" :class="`method-${m}`">{{ m }}</span>
@@ -1002,7 +1002,7 @@ async function saveEnvVars() {
           class="request-response-split"
           :class="`split-${settings.responsePosition}`"
         >
-        <div class="request-pane kt-card kt-card-bordered">
+        <div class="request-pane">
         <el-tabs v-model="activeRequestTab" class="request-tabs">
           <el-tab-pane label="Params" name="params">
             <KeyValueTable
@@ -1952,6 +1952,8 @@ async function saveEnvVars() {
   min-height: 160px;
   overflow-y: auto;
   background: var(--ao-surface);
+  border: 1px solid var(--ao-border);
+  border-radius: 8px;
   padding: 10px 14px;
 }
 .response-resizer {
@@ -2038,10 +2040,13 @@ async function saveEnvVars() {
 }
 .request-bar {
   display: flex;
+  flex-direction: row;
   gap: 8px;
   align-items: center;
   background: var(--ao-surface);
-  padding: 10px 12px;
+  border: 1px solid var(--ao-border);
+  border-radius: 8px;
+  padding: 8px 10px;
 }
 .method-select {
   width: 120px;
