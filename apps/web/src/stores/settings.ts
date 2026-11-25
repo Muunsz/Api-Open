@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 
-export type ThemeMode = 'light' | 'dark';
+export type ThemeMode = 'system' | 'light' | 'dark';
 export type NavbarPosition = 'top' | 'bottom';
 export type PanelPosition = 'left' | 'right' | 'top' | 'bottom';
 
@@ -18,7 +18,7 @@ export interface AppSettings {
 const SETTINGS_KEY = 'api_open_settings_v1';
 
 const DEFAULT_SETTINGS: AppSettings = {
-  theme: 'light',
+  theme: 'system',
   navbarPosition: 'top',
   sidebarPosition: 'left',
   sidebarWidth: 280,
@@ -47,13 +47,34 @@ export const useSettingsStore = defineStore('settings', () => {
   const responsePosition = ref<PanelPosition>(initial.responsePosition);
   const responseSizePercent = ref<number>(initial.responseSizePercent);
 
-  function applyTheme(mode: ThemeMode) {
-    const isDark = mode === 'dark';
+  const mediaQuery =
+    typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia('(prefers-color-scheme: dark)')
+      : null;
+  const systemPrefersDark = ref<boolean>(mediaQuery?.matches ?? false);
+
+  mediaQuery?.addEventListener('change', (e) => {
+    systemPrefersDark.value = e.matches;
+  });
+
+  const effectiveTheme = computed<'light' | 'dark'>(() => {
+    if (theme.value === 'system') {
+      return systemPrefersDark.value ? 'dark' : 'light';
+    }
+    return theme.value;
+  });
+
+  function applyTheme(resolved: 'light' | 'dark') {
+    const isDark = resolved === 'dark';
     document.documentElement.classList.toggle('dark', isDark);
-    document.documentElement.setAttribute('data-kt-theme-mode', mode);
+    document.documentElement.setAttribute('data-kt-theme-mode', resolved);
   }
 
-  applyTheme(theme.value);
+  applyTheme(effectiveTheme.value);
+
+  watch(effectiveTheme, (resolved) => {
+    applyTheme(resolved);
+  });
 
   watch(
     [
@@ -66,7 +87,6 @@ export const useSettingsStore = defineStore('settings', () => {
       responseSizePercent,
     ],
     () => {
-      applyTheme(theme.value);
       try {
         localStorage.setItem(
           SETTINGS_KEY,
@@ -87,7 +107,7 @@ export const useSettingsStore = defineStore('settings', () => {
   );
 
   function toggleTheme() {
-    theme.value = theme.value === 'light' ? 'dark' : 'light';
+    theme.value = effectiveTheme.value === 'light' ? 'dark' : 'light';
   }
 
   function resetDefaults() {
@@ -102,6 +122,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   return {
     theme,
+    effectiveTheme,
     navbarPosition,
     sidebarPosition,
     sidebarWidth,

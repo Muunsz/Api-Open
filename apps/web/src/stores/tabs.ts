@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type {
   AuthConfig,
   BodyConfig,
@@ -91,6 +91,8 @@ function createDefaultTab(partial?: Partial<RequestTab>): RequestTab {
 }
 
 const HISTORY_STORAGE_KEY = 'api_open_history_v1';
+const TABS_STORAGE_KEY = 'api_open_tabs_v1';
+const RUNTIME_ENV_STORAGE_KEY = 'api_open_runtime_env_v1';
 
 function loadHistory(): HistoryEntry[] {
   try {
@@ -101,12 +103,96 @@ function loadHistory(): HistoryEntry[] {
   }
 }
 
+function loadSavedTabsState(): {
+  tabs: RequestTab[];
+  activeTabId: string;
+} {
+  try {
+    const raw = localStorage.getItem(TABS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as {
+        tabs?: RequestTab[];
+        activeTabId?: string;
+      };
+      if (Array.isArray(parsed.tabs) && parsed.tabs.length > 0) {
+        const sanitized = parsed.tabs.map((t) => ({
+          ...createDefaultTab(t),
+          loading: false,
+          response: t.response ?? null,
+          error: t.error ?? null,
+          testResults: t.testResults ?? [],
+          scriptLogs: t.scriptLogs ?? [],
+          scriptError: t.scriptError ?? null,
+        }));
+        const activeId =
+          parsed.activeTabId && sanitized.some((t) => t.id === parsed.activeTabId)
+            ? parsed.activeTabId
+            : sanitized[0].id;
+        return { tabs: sanitized, activeTabId: activeId };
+      }
+    }
+  } catch {
+    // ignore invalid localStorage data
+  }
+  const fallback = createDefaultTab();
+  return { tabs: [fallback], activeTabId: fallback.id };
+}
+
+function loadRuntimeEnv(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(RUNTIME_ENV_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export const useTabsStore = defineStore('tabs', () => {
-  const initialTab = createDefaultTab();
-  const tabs = ref<RequestTab[]>([initialTab]);
-  const activeTabId = ref<string>(initialTab.id);
+  const initialState = loadSavedTabsState();
+  const tabs = ref<RequestTab[]>(initialState.tabs);
+  const activeTabId = ref<string>(initialState.activeTabId);
   const history = ref<HistoryEntry[]>(loadHistory());
-  const runtimeEnvOverrides = ref<Record<string, string>>({});
+  const runtimeEnvOverrides = ref<Record<string, string>>(loadRuntimeEnv());
+
+  watch(
+    [tabs, activeTabId],
+    () => {
+      try {
+        const serializableTabs = tabs.value.map((t) => ({
+          ...t,
+          loading: false,
+          // Keep response small in localStorage (skip huge >100KB payloads)
+          response:
+            t.response && t.response.sizeBytes < 100_000 ? t.response : null,
+        }));
+        localStorage.setItem(
+          TABS_STORAGE_KEY,
+          JSON.stringify({
+            tabs: serializableTabs,
+            activeTabId: activeTabId.value,
+          }),
+        );
+      } catch {
+        // ignore quota exceeded
+      }
+    },
+    { deep: true },
+  );
+
+  watch(
+    runtimeEnvOverrides,
+    () => {
+      try {
+        localStorage.setItem(
+          RUNTIME_ENV_STORAGE_KEY,
+          JSON.stringify(runtimeEnvOverrides.value),
+        );
+      } catch {
+        // ignore
+      }
+    },
+    { deep: true },
+  );
 
   const activeTab = computed(
     () => tabs.value.find((t) => t.id === activeTabId.value) ?? tabs.value[0],

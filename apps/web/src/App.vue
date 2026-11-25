@@ -52,7 +52,17 @@ const methods: HttpMethod[] = [
 
 const sidebarTab = ref<'collections' | 'history'>('collections');
 const mobileSidebarVisible = ref(false);
-const clientProtocol = ref<'http' | 'ws' | 'sse'>('http');
+const savedProtocol = localStorage.getItem('api_open_protocol_v1');
+const clientProtocol = ref<'http' | 'ws' | 'sse'>(
+  savedProtocol === 'ws' || savedProtocol === 'sse' ? savedProtocol : 'http',
+);
+watch(clientProtocol, (val) => {
+  try {
+    localStorage.setItem('api_open_protocol_v1', val);
+  } catch {
+    // ignore
+  }
+});
 const activeRequestTab = ref('params');
 const activeResponseTab = ref('body');
 const responseViewMode = ref<'pretty' | 'raw'>('pretty');
@@ -821,7 +831,7 @@ async function saveEnvVars() {
         <div class="brand">
           <img
             :src="
-              settings.theme === 'dark'
+              settings.effectiveTheme === 'dark'
                 ? '/API-OPEN-FULL.png'
                 : '/API-OPEN-FULL-HITAM.png'
             "
@@ -882,7 +892,7 @@ async function saveEnvVars() {
         <el-button
           size="small"
           circle
-          :icon="settings.theme === 'dark' ? Sunny : Moon"
+          :icon="settings.effectiveTheme === 'dark' ? Sunny : Moon"
           title="Toggle Dark / Light Mode"
           @click="settings.toggleTheme"
         />
@@ -1696,10 +1706,24 @@ async function saveEnvVars() {
     </el-container>
 
     <!-- Auth Dialog -->
-    <el-dialog v-model="authDialogVisible" title="Account" width="min(92vw, 380px)">
-      <div class="auth-banner">
-        <img src="/API-OPEN-FULL-WARNA.jpg" alt="Api-Open" class="auth-banner-img" />
-      </div>
+    <el-dialog v-model="authDialogVisible" width="min(92vw, 400px)" align-center>
+      <template #header>
+        <div class="auth-dialog-header">
+          <img src="/API-OPEN-LOGO.png" alt="Api-Open" class="auth-logo-mark" />
+          <img
+            :src="
+              settings.effectiveTheme === 'dark'
+                ? '/API-OPEN-FULL.png'
+                : '/API-OPEN-FULL-HITAM.png'
+            "
+            alt="Api-Open"
+            class="auth-logo-wordmark"
+          />
+          <el-text size="small" type="info">
+            Sign in to sync workspaces, collections & environments
+          </el-text>
+        </div>
+      </template>
       <el-tabs v-model="authMode" stretch>
         <el-tab-pane label="Sign In" name="login" />
         <el-tab-pane label="Register" name="register" />
@@ -2122,16 +2146,22 @@ async function saveEnvVars() {
   object-fit: contain;
   display: block;
 }
-.auth-banner {
-  background: #1b2434;
-  border-radius: 8px;
-  padding: 10px 16px;
-  margin-bottom: 12px;
+.auth-dialog-header {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding-top: 4px;
 }
-.auth-banner-img {
+.auth-logo-mark {
+  width: 44px;
   height: 44px;
+  object-fit: contain;
+}
+.auth-logo-wordmark {
+  height: 28px;
+  width: auto;
   object-fit: contain;
 }
 .top-actions {

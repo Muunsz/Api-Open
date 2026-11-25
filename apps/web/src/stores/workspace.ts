@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { User } from '@supabase/supabase-js';
 import type { EnvVariable } from '@api-open/shared';
 import { supabase } from '../lib/supabase';
@@ -32,12 +32,34 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const profile = ref<UserProfileDto | null>(null);
   const accessToken = ref<string | null>(null);
   const workspaces = ref<WorkspaceDto[]>([]);
-  const activeWorkspaceId = ref<string>('');
+  const activeWorkspaceId = ref<string>(
+    localStorage.getItem('api_open_active_ws_v1') || '',
+  );
   const collections = ref<CollectionDto[]>([]);
   const environments = ref<EnvironmentDto[]>([]);
   const members = ref<WorkspaceMemberDto[]>([]);
-  const activeEnvId = ref<string>('');
+  const activeEnvId = ref<string>(
+    localStorage.getItem('api_open_active_env_v1') || '',
+  );
   const loadingData = ref(false);
+
+  watch(activeWorkspaceId, (id) => {
+    try {
+      if (id) localStorage.setItem('api_open_active_ws_v1', id);
+      else localStorage.removeItem('api_open_active_ws_v1');
+    } catch {
+      // ignore
+    }
+  });
+
+  watch(activeEnvId, (id) => {
+    try {
+      if (id) localStorage.setItem('api_open_active_env_v1', id);
+      else localStorage.removeItem('api_open_active_env_v1');
+    } catch {
+      // ignore
+    }
+  });
 
   const isAuthenticated = computed(() => Boolean(accessToken.value && user.value));
 

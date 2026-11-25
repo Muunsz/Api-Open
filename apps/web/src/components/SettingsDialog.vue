@@ -130,6 +130,7 @@ async function handleChangePassword() {
         <el-form label-width="175px" label-position="left" size="small">
           <el-form-item label="Theme Mode">
             <el-radio-group v-model="settings.theme">
+              <el-radio-button value="system">Auto (Chrome)</el-radio-button>
               <el-radio-button value="light">Light</el-radio-button>
               <el-radio-button value="dark">Dark</el-radio-button>
             </el-radio-group>
