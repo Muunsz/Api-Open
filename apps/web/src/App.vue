@@ -25,6 +25,7 @@ import {
 import { ElMessage } from 'element-plus';
 import { executeProxyRequest } from './api/proxy';
 import CollectionRunnerDialog from './components/CollectionRunnerDialog.vue';
+import CookiesDialog from './components/CookiesDialog.vue';
 import KeyValueTable from './components/KeyValueTable.vue';
 import RealtimePanel from './components/RealtimePanel.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
@@ -58,14 +59,21 @@ const methods: HttpMethod[] = [
 const sidebarTab = ref<'collections' | 'history'>('collections');
 const mobileSidebarVisible = ref(false);
 const savedProtocol = localStorage.getItem('api_open_protocol_v1');
-const clientProtocol = ref<'http' | 'ws' | 'sse'>(
-  savedProtocol === 'ws' || savedProtocol === 'sse' ? savedProtocol : 'http',
+const clientProtocol = ref<'http' | 'graphql' | 'ws' | 'sse'>(
+  savedProtocol === 'graphql' || savedProtocol === 'ws' || savedProtocol === 'sse'
+    ? savedProtocol
+    : 'http',
 );
 watch(clientProtocol, (val) => {
   try {
     localStorage.setItem('api_open_protocol_v1', val);
   } catch {
     // ignore
+  }
+  if (val === 'graphql' && store.activeTab) {
+    store.activeTab.method = 'POST';
+    store.activeTab.body.mode = 'graphql';
+    activeRequestTab.value = 'body';
   }
 });
 const activeRequestTab = ref('params');
@@ -137,6 +145,7 @@ const searchQuery = ref('');
 const searchInputRef = ref<{ focus?: () => void } | null>(null);
 const shortcutsDialogVisible = ref(false);
 const shortcutSearch = ref('');
+const cookiesDialogVisible = ref(false);
 
 const shortcutGroups = [
   {
@@ -328,7 +337,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   }
   if (mod && key === 'enter') {
     e.preventDefault();
-    if (clientProtocol.value === 'http') {
+    if (clientProtocol.value === 'http' || clientProtocol.value === 'graphql') {
       store.sendActiveRequest();
     }
     return;
@@ -1011,6 +1020,7 @@ async function saveEnvVars() {
         </div>
         <el-radio-group v-model="clientProtocol" size="small">
           <el-radio-button value="http">HTTP</el-radio-button>
+          <el-radio-button value="graphql">GraphQL</el-radio-button>
           <el-radio-button value="ws">WS</el-radio-button>
           <el-radio-button value="sse">SSE</el-radio-button>
         </el-radio-group>
@@ -1317,7 +1327,7 @@ async function saveEnvVars() {
 
       <el-main class="workspace" v-if="tab">
         <RealtimePanel
-          v-if="clientProtocol !== 'http'"
+          v-if="clientProtocol === 'ws' || clientProtocol === 'sse'"
           :key="clientProtocol"
           :protocol="clientProtocol"
         />
@@ -1946,10 +1956,26 @@ async function saveEnvVars() {
         >
           <el-icon><component :is="settings.sidebarHidden ? Expand : Fold" /></el-icon>
         </button>
-        <span class="footer-status" title="Proxy Interceptor Active">
+        <button
+          type="button"
+          class="footer-status footer-btn"
+          title="Interceptor Mode (click to toggle Proxy / Browser)"
+          @click="
+            settings.interceptor =
+              settings.interceptor === 'proxy' ? 'browser' : 'proxy'
+          "
+        >
           <span class="status-dot" />
-          Proxy
-        </span>
+          <span>{{ settings.interceptor === 'proxy' ? 'Proxy' : 'Browser' }}</span>
+        </button>
+        <button
+          type="button"
+          class="footer-btn"
+          title="Manage Cookies"
+          @click="cookiesDialogVisible = true"
+        >
+          <span>Cookies</span>
+        </button>
       </div>
 
       <div class="footer-right">
@@ -2328,6 +2354,8 @@ async function saveEnvVars() {
       v-model:visible="settingsVisible"
       :initial-tab="settingsInitialTab"
     />
+
+    <CookiesDialog v-model:visible="cookiesDialogVisible" />
 
     <!-- Quick Search API Dialog (Ctrl+K) -->
     <el-dialog

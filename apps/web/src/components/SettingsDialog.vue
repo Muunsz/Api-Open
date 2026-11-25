@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { supabase } from '../lib/supabase';
-import { useSettingsStore } from '../stores/settings';
+import { ACCENT_COLORS, useSettingsStore } from '../stores/settings';
 import { useWorkspaceStore } from '../stores/workspace';
 
 const props = defineProps<{
@@ -133,6 +133,36 @@ async function handleChangePassword() {
               <el-radio-button value="system">Auto (Chrome)</el-radio-button>
               <el-radio-button value="light">Light</el-radio-button>
               <el-radio-button value="dark">Dark</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+
+          <el-form-item label="Accent Color">
+            <div class="accent-swatches">
+              <button
+                v-for="c in ACCENT_COLORS"
+                :key="c.value"
+                type="button"
+                class="accent-dot"
+                :class="{ active: settings.accentColor === c.value }"
+                :style="{ backgroundColor: c.value }"
+                :title="c.name"
+                @click="settings.accentColor = c.value"
+              />
+            </div>
+          </el-form-item>
+
+          <el-form-item label="Request Interceptor">
+            <el-radio-group v-model="settings.interceptor">
+              <el-radio-button value="proxy">Proxy (Bypass CORS)</el-radio-button>
+              <el-radio-button value="browser">Browser Direct</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+
+          <el-form-item label="Query Param Encoding">
+            <el-radio-group v-model="settings.queryEncoding">
+              <el-radio-button value="auto">Auto</el-radio-button>
+              <el-radio-button value="enable">Enable</el-radio-button>
+              <el-radio-button value="disable">Disable</el-radio-button>
             </el-radio-group>
           </el-form-item>
 
@@ -292,5 +322,25 @@ async function handleChangePassword() {
   align-items: center;
   gap: 12px;
   margin-bottom: 16px;
+}
+.accent-swatches {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.accent-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.accent-dot:hover {
+  transform: scale(1.1);
+}
+.accent-dot.active {
+  outline: 2px solid var(--ao-text);
+  outline-offset: 2px;
 }
 </style>

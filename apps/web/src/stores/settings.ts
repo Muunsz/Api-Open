@@ -4,9 +4,24 @@ import { computed, ref, watch } from 'vue';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type NavbarPosition = 'top' | 'bottom';
 export type PanelPosition = 'left' | 'right' | 'top' | 'bottom';
+export type InterceptorMode = 'proxy' | 'browser';
+export type QueryEncodingMode = 'auto' | 'enable' | 'disable';
+
+export const ACCENT_COLORS = [
+  { name: 'Indigo', value: '#6366f1' },
+  { name: 'Blue', value: '#3b82f6' },
+  { name: 'Emerald', value: '#10b981' },
+  { name: 'Violet', value: '#8b5cf6' },
+  { name: 'Amber', value: '#f59e0b' },
+  { name: 'Rose', value: '#f43f5e' },
+  { name: 'Cyan', value: '#06b6d4' },
+] as const;
 
 export interface AppSettings {
   theme: ThemeMode;
+  accentColor: string;
+  interceptor: InterceptorMode;
+  queryEncoding: QueryEncodingMode;
   navbarPosition: NavbarPosition;
   sidebarPosition: PanelPosition;
   sidebarHidden: boolean;
@@ -20,6 +35,9 @@ const SETTINGS_KEY = 'api_open_settings_v1';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
+  accentColor: '#3b82f6',
+  interceptor: 'proxy',
+  queryEncoding: 'auto',
   navbarPosition: 'top',
   sidebarPosition: 'left',
   sidebarHidden: false,
@@ -42,6 +60,9 @@ function loadSettings(): AppSettings {
 export const useSettingsStore = defineStore('settings', () => {
   const initial = loadSettings();
   const theme = ref<ThemeMode>(initial.theme);
+  const accentColor = ref<string>(initial.accentColor);
+  const interceptor = ref<InterceptorMode>(initial.interceptor);
+  const queryEncoding = ref<QueryEncodingMode>(initial.queryEncoding);
   const navbarPosition = ref<NavbarPosition>(initial.navbarPosition);
   const sidebarPosition = ref<PanelPosition>(initial.sidebarPosition);
   const sidebarHidden = ref<boolean>(initial.sidebarHidden);
@@ -73,15 +94,28 @@ export const useSettingsStore = defineStore('settings', () => {
     document.documentElement.setAttribute('data-kt-theme-mode', resolved);
   }
 
+  function applyAccent(color: string) {
+    document.documentElement.style.setProperty('--ao-accent', color);
+    document.documentElement.style.setProperty('--el-color-primary', color);
+  }
+
   applyTheme(effectiveTheme.value);
+  applyAccent(accentColor.value);
 
   watch(effectiveTheme, (resolved) => {
     applyTheme(resolved);
   });
 
+  watch(accentColor, (color) => {
+    applyAccent(color);
+  });
+
   watch(
     [
       theme,
+      accentColor,
+      interceptor,
+      queryEncoding,
       navbarPosition,
       sidebarPosition,
       sidebarHidden,
@@ -96,6 +130,9 @@ export const useSettingsStore = defineStore('settings', () => {
           SETTINGS_KEY,
           JSON.stringify({
             theme: theme.value,
+            accentColor: accentColor.value,
+            interceptor: interceptor.value,
+            queryEncoding: queryEncoding.value,
             navbarPosition: navbarPosition.value,
             sidebarPosition: sidebarPosition.value,
             sidebarHidden: sidebarHidden.value,
@@ -117,6 +154,9 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function resetDefaults() {
     theme.value = DEFAULT_SETTINGS.theme;
+    accentColor.value = DEFAULT_SETTINGS.accentColor;
+    interceptor.value = DEFAULT_SETTINGS.interceptor;
+    queryEncoding.value = DEFAULT_SETTINGS.queryEncoding;
     navbarPosition.value = DEFAULT_SETTINGS.navbarPosition;
     sidebarPosition.value = DEFAULT_SETTINGS.sidebarPosition;
     sidebarHidden.value = DEFAULT_SETTINGS.sidebarHidden;
@@ -129,6 +169,9 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     theme,
     effectiveTheme,
+    accentColor,
+    interceptor,
+    queryEncoding,
     navbarPosition,
     sidebarPosition,
     sidebarHidden,

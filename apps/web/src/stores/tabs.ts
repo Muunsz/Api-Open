@@ -7,7 +7,10 @@ import type {
   KeyValueItem,
   ProxyExecuteResponse,
 } from '@api-open/shared';
-import { executeProxyRequest } from '../api/proxy';
+import {
+  executeBrowserDirectRequest,
+  executeProxyRequest,
+} from '../api/proxy';
 import { type ApiRequestDto, workspaceApi } from '../api/workspace';
 import { parseCurlCommand } from '../utils/curlParser';
 import {
@@ -17,6 +20,8 @@ import {
 import { generateSnippet, type SnippetLang } from '../utils/snippetGenerator';
 import { buildUrlWithParams, parseQueryFromUrl } from '../utils/urlSync';
 import { resolveVariables } from '../utils/variables';
+import { useCookiesStore } from './cookies';
+import { useSettingsStore } from './settings';
 import { useWorkspaceStore } from './workspace';
 
 export interface RequestTab {
@@ -252,7 +257,12 @@ export const useTabsStore = defineStore('tabs', () => {
   function syncUrlFromParams() {
     const tab = activeTab.value;
     if (!tab) return;
-    tab.url = buildUrlWithParams(tab.url, tab.queryParams);
+    const settings = useSettingsStore();
+    tab.url = buildUrlWithParams(
+      tab.url,
+      tab.queryParams,
+      settings.queryEncoding,
+    );
   }
 
   function importCurl(curlCommand: string) {
@@ -466,8 +476,23 @@ export const useTabsStore = defineStore('tabs', () => {
     const { resolvedUrl, queryParams, headers, resolvedAuth, resolvedBody } =
       buildResolvedRequest(tab, envSnapshot);
 
+    const settings = useSettingsStore();
+    const cookiesStore = useCookiesStore();
+
+    if (!Object.keys(headers).some((k) => k.toLowerCase() === 'cookie')) {
+      const cookieHeader = cookiesStore.getCookieHeaderForUrl(resolvedUrl);
+      if (cookieHeader) {
+        headers['Cookie'] = cookieHeader;
+      }
+    }
+
     try {
-      const res = await executeProxyRequest({
+      const executor =
+        settings.interceptor === 'browser'
+          ? executeBrowserDirectRequest
+          : executeProxyRequest;
+
+      const res = await executor({
         method: tab.method,
         url: resolvedUrl,
         headers,
@@ -476,6 +501,7 @@ export const useTabsStore = defineStore('tabs', () => {
         body: resolvedBody,
       });
       tab.response = res;
+      cookiesStore.captureFromResponseHeaders(resolvedUrl, res.headers);
 
       if (tab.testScript.trim()) {
         const testOut = await runScriptInSandbox({

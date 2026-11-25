@@ -34,6 +34,7 @@ export function parseQueryFromUrl(rawUrl: string): KeyValueItem[] {
 export function buildUrlWithParams(
   rawUrl: string,
   rows: KeyValueItem[],
+  encoding: 'auto' | 'enable' | 'disable' = 'auto',
 ): string {
   const [withoutHash, hash] = rawUrl.split('#');
   const baseUrl = withoutHash.split('?')[0];
@@ -43,8 +44,13 @@ export function buildUrlWithParams(
     return hash !== undefined ? `${baseUrl}#${hash}` : baseUrl;
   }
 
+  const encodeVal = (v: string) => {
+    if (encoding === 'disable') return v;
+    return encodePreservingVars(v);
+  };
+
   const query = active
-    .map((r) => `${encodePreservingVars(r.key.trim())}=${encodePreservingVars(r.value ?? '')}`)
+    .map((r) => `${encodeVal(r.key.trim())}=${encodeVal(r.value ?? '')}`)
     .join('&');
 
   const full = `${baseUrl}?${query}`;
