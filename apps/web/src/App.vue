@@ -998,14 +998,6 @@ async function saveEnvVars() {
           size="small"
           @click="mobileSidebarVisible = true"
         />
-        <el-button
-          class="desktop-sidebar-toggle"
-          :icon="settings.sidebarHidden ? Expand : Fold"
-          circle
-          size="small"
-          title="Hide / Show Sidebar (Ctrl+B)"
-          @click="settings.sidebarHidden = !settings.sidebarHidden"
-        />
         <div class="brand">
           <img
             :src="
@@ -1949,15 +1941,14 @@ async function saveEnvVars() {
         <button
           type="button"
           class="footer-btn"
-          title="Toggle Sidebar (Ctrl+B)"
+          :title="settings.sidebarHidden ? 'Show Sidebar (Ctrl+B)' : 'Hide Sidebar (Ctrl+B)'"
           @click="settings.sidebarHidden = !settings.sidebarHidden"
         >
           <el-icon><component :is="settings.sidebarHidden ? Expand : Fold" /></el-icon>
-          <span>{{ settings.sidebarHidden ? 'Show Sidebar' : 'Hide Sidebar' }}</span>
         </button>
-        <span class="footer-status">
+        <span class="footer-status" title="Proxy Interceptor Active">
           <span class="status-dot" />
-          Proxy Ready
+          Proxy
         </span>
       </div>
 
@@ -2930,8 +2921,7 @@ async function saveEnvVars() {
 }
 
 @media (max-width: 900px) {
-  .desktop-sidebar,
-  .desktop-sidebar-toggle {
+  .desktop-sidebar {
     display: none;
   }
   .mobile-menu-btn {
