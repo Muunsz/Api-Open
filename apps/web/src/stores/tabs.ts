@@ -201,8 +201,13 @@ export const useTabsStore = defineStore('tabs', () => {
       }
     }
 
+    let resolvedAuth: AuthConfig | undefined;
+
     if (tab.auth.type === 'bearer' && tab.auth.token) {
       headers['Authorization'] = `Bearer ${r(tab.auth.token)}`;
+    } else if (tab.auth.type === 'oauth2' && tab.auth.accessToken) {
+      const prefix = tab.auth.headerPrefix?.trim() || 'Bearer';
+      headers['Authorization'] = `${prefix} ${r(tab.auth.accessToken)}`;
     } else if (tab.auth.type === 'basic' && tab.auth.username) {
       const encoded = btoa(
         `${r(tab.auth.username)}:${r(tab.auth.password ?? '')}`,
@@ -214,6 +219,36 @@ export const useTabsStore = defineStore('tabs', () => {
       } else {
         queryParams[r(tab.auth.key)] = r(tab.auth.value);
       }
+    } else if (tab.auth.type === 'digest') {
+      resolvedAuth = {
+        type: 'digest',
+        username: r(tab.auth.username),
+        password: r(tab.auth.password),
+      };
+    } else if (tab.auth.type === 'aws') {
+      resolvedAuth = {
+        type: 'aws',
+        accessKey: r(tab.auth.accessKey),
+        secretKey: r(tab.auth.secretKey),
+        region: r(tab.auth.region),
+        service: r(tab.auth.service),
+        sessionToken: tab.auth.sessionToken ? r(tab.auth.sessionToken) : undefined,
+      };
+    } else if (tab.auth.type === 'hawk') {
+      resolvedAuth = {
+        type: 'hawk',
+        hawkId: r(tab.auth.hawkId),
+        hawkKey: r(tab.auth.hawkKey),
+        algorithm: tab.auth.algorithm,
+      };
+    } else if (tab.auth.type === 'jwt') {
+      resolvedAuth = {
+        type: 'jwt',
+        secret: r(tab.auth.secret),
+        algorithm: tab.auth.algorithm,
+        payload: r(tab.auth.payload),
+        headerPrefix: tab.auth.headerPrefix ? r(tab.auth.headerPrefix) : 'Bearer',
+      };
     }
 
     const resolvedBody: BodyConfig = {
@@ -240,7 +275,7 @@ export const useTabsStore = defineStore('tabs', () => {
         : undefined,
     };
 
-    return { resolvedUrl, queryParams, headers, resolvedBody };
+    return { resolvedUrl, queryParams, headers, resolvedAuth, resolvedBody };
   }
 
   function getSnippet(lang: SnippetLang): string {
@@ -342,7 +377,7 @@ export const useTabsStore = defineStore('tabs', () => {
       }
     }
 
-    const { resolvedUrl, queryParams, headers, resolvedBody } =
+    const { resolvedUrl, queryParams, headers, resolvedAuth, resolvedBody } =
       buildResolvedRequest(tab, envSnapshot);
 
     try {
@@ -351,6 +386,7 @@ export const useTabsStore = defineStore('tabs', () => {
         url: resolvedUrl,
         headers,
         queryParams,
+        auth: resolvedAuth,
         body: resolvedBody,
       });
       tab.response = res;

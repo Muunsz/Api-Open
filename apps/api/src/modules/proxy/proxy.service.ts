@@ -4,6 +4,12 @@ import type {
   ProxyExecuteRequest,
   ProxyExecuteResponse,
 } from '@api-open/shared';
+import {
+  applyAwsSigV4Headers,
+  buildDigestHeader,
+  buildHawkHeader,
+  buildJwtHeader,
+} from '../../common/auth-signer.util';
 import { validateTargetUrl } from '../../common/ssrf.util';
 
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -33,6 +39,27 @@ export class ProxyService {
     }
 
     const body = this.buildBody(payload.method, payload.body, headers);
+
+    if (payload.auth) {
+      if (payload.auth.type === 'jwt' && payload.auth.secret) {
+        headers.set('authorization', await buildJwtHeader(payload.auth));
+      } else if (payload.auth.type === 'hawk' && payload.auth.hawkId) {
+        headers.set(
+          'authorization',
+          buildHawkHeader(payload.auth, payload.method, parsedUrl),
+        );
+      } else if (payload.auth.type === 'aws' && payload.auth.accessKey) {
+        const rawStr = typeof body === 'string' ? body : '';
+        applyAwsSigV4Headers(
+          payload.auth,
+          payload.method,
+          parsedUrl,
+          headers,
+          rawStr,
+        );
+      }
+    }
+
     const timeoutMs = Math.min(
       Math.max(payload.timeoutMs ?? DEFAULT_TIMEOUT_MS, 500),
       MAX_TIMEOUT_MS,
@@ -48,6 +75,31 @@ export class ProxyService {
         redirect: 'follow',
         signal: AbortSignal.timeout(timeoutMs),
       });
+
+      if (
+        response.status === 401 &&
+        payload.auth?.type === 'digest' &&
+        payload.auth.username
+      ) {
+        const wwwAuth = response.headers.get('www-authenticate') ?? '';
+        const digestHeader = buildDigestHeader(
+          wwwAuth,
+          payload.auth.username,
+          payload.auth.password ?? '',
+          payload.method,
+          `${parsedUrl.pathname}${parsedUrl.search}`,
+        );
+        if (digestHeader) {
+          headers.set('authorization', digestHeader);
+          response = await fetch(parsedUrl.toString(), {
+            method: payload.method,
+            headers,
+            body,
+            redirect: 'follow',
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+        }
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Failed to execute target request';

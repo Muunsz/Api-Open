@@ -19,7 +19,42 @@ export type AuthConfig =
   | { type: 'none' }
   | { type: 'bearer'; token: string }
   | { type: 'basic'; username: string; password: string }
-  | { type: 'apikey'; key: string; value: string; addTo: 'header' | 'query' };
+  | { type: 'apikey'; key: string; value: string; addTo: 'header' | 'query' }
+  | {
+      type: 'oauth2';
+      accessToken: string;
+      tokenUrl?: string;
+      clientId?: string;
+      clientSecret?: string;
+      scope?: string;
+      headerPrefix?: string;
+    }
+  | {
+      type: 'digest';
+      username: string;
+      password: string;
+    }
+  | {
+      type: 'aws';
+      accessKey: string;
+      secretKey: string;
+      region: string;
+      service: string;
+      sessionToken?: string;
+    }
+  | {
+      type: 'hawk';
+      hawkId: string;
+      hawkKey: string;
+      algorithm: 'sha256' | 'sha1';
+    }
+  | {
+      type: 'jwt';
+      secret: string;
+      algorithm: 'HS256' | 'HS512';
+      payload: string;
+      headerPrefix?: string;
+    };
 
 export type BodyMode =
   | 'none'
@@ -62,6 +97,7 @@ export interface ProxyExecuteRequest {
   url: string;
   headers?: Record<string, string>;
   queryParams?: Record<string, string>;
+  auth?: AuthConfig;
   body?: BodyConfig;
   timeoutMs?: number;
 }

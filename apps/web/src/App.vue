@@ -106,6 +106,7 @@ const gqlSchemaVisible = ref(false);
 const gqlLoading = ref(false);
 const gqlQueries = ref<GqlFieldSummary[]>([]);
 const gqlMutations = ref<GqlFieldSummary[]>([]);
+const fetchingOAuthToken = ref(false);
 
 // Settings & Profile Modal
 const settingsVisible = ref(false);
@@ -535,6 +536,42 @@ async function fetchGraphqlSchema() {
   }
 }
 
+async function fetchOAuth2Token() {
+  if (!tab.value || tab.value.auth.type !== 'oauth2') return;
+  const auth = tab.value.auth;
+  if (!auth.tokenUrl?.trim()) {
+    ElMessage.warning('Enter Token URL first');
+    return;
+  }
+  fetchingOAuthToken.value = true;
+  try {
+    const r = (v?: string) => resolveVariables(v || '', ws.activeVariablesMap);
+    const res = await executeProxyRequest({
+      method: 'POST',
+      url: r(auth.tokenUrl.trim()),
+      body: {
+        mode: 'urlencoded',
+        urlencoded: [
+          { id: '1', key: 'grant_type', value: 'client_credentials', enabled: true },
+          { id: '2', key: 'client_id', value: r(auth.clientId), enabled: Boolean(auth.clientId) },
+          { id: '3', key: 'client_secret', value: r(auth.clientSecret), enabled: Boolean(auth.clientSecret) },
+          { id: '4', key: 'scope', value: r(auth.scope), enabled: Boolean(auth.scope) },
+        ],
+      },
+    });
+    const parsed = JSON.parse(res.body) as { access_token?: string };
+    if (!parsed.access_token) {
+      throw new Error('Response did not include access_token');
+    }
+    auth.accessToken = parsed.access_token;
+    ElMessage.success('Access token fetched');
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : 'Failed to fetch OAuth token');
+  } finally {
+    fetchingOAuthToken.value = false;
+  }
+}
+
 function openEnvDialog() {
   if (!ws.isAuthenticated) {
     authDialogVisible.value = true;
@@ -940,15 +977,51 @@ async function saveEnvVars() {
                       else if (val === 'bearer') tab.auth = { type: 'bearer', token: '' };
                       else if (val === 'basic')
                         tab.auth = { type: 'basic', username: '', password: '' };
+                      else if (val === 'digest')
+                        tab.auth = { type: 'digest', username: '', password: '' };
+                      else if (val === 'oauth2')
+                        tab.auth = {
+                          type: 'oauth2',
+                          accessToken: '',
+                          tokenUrl: '',
+                          clientId: '',
+                          clientSecret: '',
+                          scope: '',
+                          headerPrefix: 'Bearer',
+                        };
                       else if (val === 'apikey')
                         tab.auth = { type: 'apikey', key: '', value: '', addTo: 'header' };
+                      else if (val === 'aws')
+                        tab.auth = {
+                          type: 'aws',
+                          accessKey: '',
+                          secretKey: '',
+                          region: 'us-east-1',
+                          service: 'execute-api',
+                          sessionToken: '',
+                        };
+                      else if (val === 'hawk')
+                        tab.auth = { type: 'hawk', hawkId: '', hawkKey: '', algorithm: 'sha256' };
+                      else if (val === 'jwt')
+                        tab.auth = {
+                          type: 'jwt',
+                          secret: '',
+                          algorithm: 'HS256',
+                          payload: '{\n  &quot;sub&quot;: &quot;1234567890&quot;\n}',
+                          headerPrefix: 'Bearer',
+                        };
                     }
                   "
                 >
                   <el-option label="No Auth" value="none" />
                   <el-option label="Bearer Token" value="bearer" />
                   <el-option label="Basic Auth" value="basic" />
+                  <el-option label="Digest Auth" value="digest" />
+                  <el-option label="OAuth 2.0" value="oauth2" />
                   <el-option label="API Key" value="apikey" />
+                  <el-option label="AWS Signature" value="aws" />
+                  <el-option label="HAWK" value="hawk" />
+                  <el-option label="JWT" value="jwt" />
                 </el-select>
               </el-form-item>
 
@@ -958,12 +1031,38 @@ async function saveEnvVars() {
                 </el-form-item>
               </template>
 
-              <template v-if="tab.auth.type === 'basic'">
+              <template v-if="tab.auth.type === 'basic' || tab.auth.type === 'digest'">
                 <el-form-item label="Username">
                   <el-input v-model="tab.auth.username" />
                 </el-form-item>
                 <el-form-item label="Password">
                   <el-input v-model="tab.auth.password" show-password />
+                </el-form-item>
+              </template>
+
+              <template v-if="tab.auth.type === 'oauth2'">
+                <el-form-item label="Access Token">
+                  <el-input v-model="tab.auth.accessToken" placeholder="Access token" show-password />
+                </el-form-item>
+                <el-form-item label="Header Prefix">
+                  <el-input v-model="tab.auth.headerPrefix" placeholder="Bearer" />
+                </el-form-item>
+                <el-form-item label="Token URL">
+                  <el-input v-model="tab.auth.tokenUrl" placeholder="https://auth.example.com/oauth/token" />
+                </el-form-item>
+                <el-form-item label="Client ID">
+                  <el-input v-model="tab.auth.clientId" />
+                </el-form-item>
+                <el-form-item label="Client Secret">
+                  <el-input v-model="tab.auth.clientSecret" show-password />
+                </el-form-item>
+                <el-form-item label="Scope">
+                  <el-input v-model="tab.auth.scope" placeholder="read write" />
+                </el-form-item>
+                <el-form-item>
+                  <el-button size="small" type="primary" :loading="fetchingOAuthToken" @click="fetchOAuth2Token">
+                    Get New Access Token
+                  </el-button>
                 </el-form-item>
               </template>
 
@@ -979,6 +1078,57 @@ async function saveEnvVars() {
                     <el-radio value="header">Header</el-radio>
                     <el-radio value="query">Query Params</el-radio>
                   </el-radio-group>
+                </el-form-item>
+              </template>
+
+              <template v-if="tab.auth.type === 'aws'">
+                <el-form-item label="Access Key">
+                  <el-input v-model="tab.auth.accessKey" />
+                </el-form-item>
+                <el-form-item label="Secret Key">
+                  <el-input v-model="tab.auth.secretKey" show-password />
+                </el-form-item>
+                <el-form-item label="AWS Region">
+                  <el-input v-model="tab.auth.region" placeholder="us-east-1" />
+                </el-form-item>
+                <el-form-item label="Service Name">
+                  <el-input v-model="tab.auth.service" placeholder="execute-api" />
+                </el-form-item>
+                <el-form-item label="Session Token">
+                  <el-input v-model="tab.auth.sessionToken" placeholder="Optional" show-password />
+                </el-form-item>
+              </template>
+
+              <template v-if="tab.auth.type === 'hawk'">
+                <el-form-item label="Hawk Auth ID">
+                  <el-input v-model="tab.auth.hawkId" />
+                </el-form-item>
+                <el-form-item label="Hawk Auth Key">
+                  <el-input v-model="tab.auth.hawkKey" show-password />
+                </el-form-item>
+                <el-form-item label="Algorithm">
+                  <el-select v-model="tab.auth.algorithm">
+                    <el-option label="sha256" value="sha256" />
+                    <el-option label="sha1" value="sha1" />
+                  </el-select>
+                </el-form-item>
+              </template>
+
+              <template v-if="tab.auth.type === 'jwt'">
+                <el-form-item label="Algorithm">
+                  <el-select v-model="tab.auth.algorithm">
+                    <el-option label="HS256" value="HS256" />
+                    <el-option label="HS512" value="HS512" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="Secret">
+                  <el-input v-model="tab.auth.secret" show-password />
+                </el-form-item>
+                <el-form-item label="Header Prefix">
+                  <el-input v-model="tab.auth.headerPrefix" placeholder="Bearer" />
+                </el-form-item>
+                <el-form-item label="Payload (JSON)">
+                  <el-input v-model="tab.auth.payload" type="textarea" :rows="4" class="code-area" />
                 </el-form-item>
               </template>
             </el-form>
