@@ -2109,11 +2109,6 @@ async function saveEnvVars() {
 .brand {
   display: flex;
   align-items: center;
-  background: #1b2434;
-  padding: 4px 10px;
-  border-radius: 8px;
-}
-:global(html.dark) .brand {
   background: transparent;
   padding: 0;
 }
