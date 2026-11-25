@@ -7,6 +7,7 @@ import {
   type ApiRequestDto,
   type CollectionDto,
   type EnvironmentDto,
+  type UserProfileDto,
   type WorkspaceDto,
   type WorkspaceMemberDto,
   workspaceApi,
@@ -28,6 +29,7 @@ export interface CollectionTreeNode {
 
 export const useWorkspaceStore = defineStore('workspace', () => {
   const user = ref<User | null>(null);
+  const profile = ref<UserProfileDto | null>(null);
   const accessToken = ref<string | null>(null);
   const workspaces = ref<WorkspaceDto[]>([]);
   const activeWorkspaceId = ref<string>('');
@@ -103,6 +105,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       if (accessToken.value) {
         await loadWorkspaces();
       } else {
+        profile.value = null;
         workspaces.value = [];
         activeWorkspaceId.value = '';
         collections.value = [];
@@ -144,7 +147,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (!accessToken.value) return;
     loadingData.value = true;
     try {
-      workspaces.value = await workspaceApi.listWorkspaces(accessToken.value);
+      const [wsList, prof] = await Promise.all([
+        workspaceApi.listWorkspaces(accessToken.value),
+        workspaceApi.getProfile(accessToken.value),
+      ]);
+      workspaces.value = wsList;
+      profile.value = prof;
       if (
         workspaces.value.length &&
         !workspaces.value.some((w) => w.id === activeWorkspaceId.value)
@@ -157,6 +165,20 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     } finally {
       loadingData.value = false;
     }
+  }
+
+  async function updateProfile(payload: {
+    name?: string;
+    avatarUrl?: string | null;
+  }) {
+    if (!accessToken.value) return;
+    profile.value = await workspaceApi.updateProfile(accessToken.value, payload);
+  }
+
+  async function updatePassword(newPassword: string) {
+    if (!supabase) throw new Error('Supabase is not configured');
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
   }
 
   async function loadWorkspaceData(workspaceId: string) {
@@ -296,6 +318,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   return {
     user,
+    profile,
     accessToken,
     isAuthenticated,
     workspaces,
@@ -314,6 +337,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     signOut,
     loadWorkspaces,
     loadWorkspaceData,
+    updateProfile,
+    updatePassword,
     createTeamWorkspace,
     inviteMember,
     removeMember,

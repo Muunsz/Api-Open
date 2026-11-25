@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -16,6 +17,19 @@ import { WorkspaceService } from './workspace.service';
 @UseGuards(SupabaseAuthGuard)
 export class WorkspaceController {
   constructor(private readonly workspaceService: WorkspaceService) {}
+
+  @Get('profile/me')
+  getProfile(@CurrentUser() user: AuthUser) {
+    return this.workspaceService.getProfile(user.id);
+  }
+
+  @Patch('profile/me')
+  updateProfile(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { name?: string; avatarUrl?: string | null },
+  ) {
+    return this.workspaceService.updateProfile(user.id, body);
+  }
 
   @Get()
   list(@CurrentUser() user: AuthUser) {

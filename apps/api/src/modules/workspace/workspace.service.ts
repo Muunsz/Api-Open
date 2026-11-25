@@ -111,6 +111,29 @@ export class WorkspaceService {
     return { deleted: true, id: memberId };
   }
 
+  async getProfile(userId: string) {
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true, avatarUrl: true },
+    });
+  }
+
+  async updateProfile(
+    userId: string,
+    data: { name?: string; avatarUrl?: string | null },
+  ) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(data.name !== undefined ? { name: data.name.trim() } : {}),
+        ...(data.avatarUrl !== undefined
+          ? { avatarUrl: data.avatarUrl?.trim() || null }
+          : {}),
+      },
+      select: { id: true, email: true, name: true, avatarUrl: true },
+    });
+  }
+
   async assertAccess(
     workspaceId: string,
     userId: string,

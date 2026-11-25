@@ -88,7 +88,26 @@ async function apiFetch<T>(
   return res.json() as Promise<T>;
 }
 
+export interface UserProfileDto {
+  id: string;
+  email: string;
+  name?: string | null;
+  avatarUrl?: string | null;
+}
+
 export const workspaceApi = {
+  getProfile: (token: string) =>
+    apiFetch<UserProfileDto>('/workspaces/profile/me', token),
+
+  updateProfile: (
+    token: string,
+    payload: { name?: string; avatarUrl?: string | null },
+  ) =>
+    apiFetch<UserProfileDto>('/workspaces/profile/me', token, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
   listWorkspaces: (token: string) =>
     apiFetch<WorkspaceDto[]>('/workspaces', token),
 

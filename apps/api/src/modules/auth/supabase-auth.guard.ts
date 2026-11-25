@@ -73,7 +73,7 @@ export class SupabaseAuthGuard implements CanActivate {
 
     await this.prisma.user.upsert({
       where: { id: userId },
-      update: { email, name, avatarUrl },
+      update: { email },
       create: {
         id: userId,
         email,

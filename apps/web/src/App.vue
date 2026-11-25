@@ -7,8 +7,10 @@ import {
   Download,
   Folder,
   Menu,
+  Moon,
   Plus,
   Setting,
+  Sunny,
   Upload,
   User,
   VideoPlay,
@@ -18,6 +20,8 @@ import { executeProxyRequest } from './api/proxy';
 import CollectionRunnerDialog from './components/CollectionRunnerDialog.vue';
 import KeyValueTable from './components/KeyValueTable.vue';
 import RealtimePanel from './components/RealtimePanel.vue';
+import SettingsDialog from './components/SettingsDialog.vue';
+import { useSettingsStore } from './stores/settings';
 import { useTabsStore } from './stores/tabs';
 import { type CollectionTreeNode, useWorkspaceStore } from './stores/workspace';
 import { generateCollectionDocsMarkdown } from './utils/docsGenerator';
@@ -32,6 +36,7 @@ import { resolveVariables } from './utils/variables';
 
 const store = useTabsStore();
 const ws = useWorkspaceStore();
+const settings = useSettingsStore();
 
 const methods: HttpMethod[] = [
   'GET',
@@ -101,6 +106,57 @@ const gqlSchemaVisible = ref(false);
 const gqlLoading = ref(false);
 const gqlQueries = ref<GqlFieldSummary[]>([]);
 const gqlMutations = ref<GqlFieldSummary[]>([]);
+
+// Settings & Profile Modal
+const settingsVisible = ref(false);
+const settingsInitialTab = ref<'layout' | 'profile'>('layout');
+const splitContainerRef = ref<HTMLElement | null>(null);
+
+function openSettings(tabName: 'layout' | 'profile' = 'layout') {
+  settingsInitialTab.value = tabName;
+  settingsVisible.value = true;
+}
+
+function startSidebarResize(e: MouseEvent) {
+  e.preventDefault();
+  const startX = e.clientX;
+  const startWidth = settings.sidebarWidth;
+  const isRight = settings.sidebarPosition === 'right';
+
+  const onMove = (ev: MouseEvent) => {
+    const delta = isRight ? startX - ev.clientX : ev.clientX - startX;
+    settings.sidebarWidth = Math.min(480, Math.max(200, startWidth + delta));
+  };
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+  };
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+}
+
+function startResponseResize(e: MouseEvent) {
+  e.preventDefault();
+  const container = splitContainerRef.value;
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
+
+  const onMove = (ev: MouseEvent) => {
+    if (settings.responsePosition === 'right') {
+      const pct = ((rect.right - ev.clientX) / rect.width) * 100;
+      settings.responseSizePercent = Math.round(Math.min(75, Math.max(25, pct)));
+    } else {
+      const pct = ((rect.bottom - ev.clientY) / rect.height) * 100;
+      settings.responseSizePercent = Math.round(Math.min(75, Math.max(25, pct)));
+    }
+  };
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+  };
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+}
 
 let syncingUrl = false;
 const tab = computed(() => store.activeTab);
@@ -559,6 +615,21 @@ async function saveEnvVars() {
         <el-button size="small" @click="snippetDialogVisible = true">
           Code
         </el-button>
+        <el-button
+          size="small"
+          circle
+          :icon="settings.theme === 'dark' ? Sunny : Moon"
+          title="Toggle Dark / Light Mode"
+          @click="settings.toggleTheme"
+        />
+        <el-button
+          size="small"
+          circle
+          :icon="Setting"
+          title="Layout & Profile Settings"
+          @click="openSettings('layout')"
+        />
+
         <template v-if="ws.isAuthenticated">
           <el-select
             v-model="ws.activeWorkspaceId"
@@ -599,11 +670,16 @@ async function saveEnvVars() {
 
           <el-dropdown>
             <el-button size="small" plain>
-              {{ ws.user?.email }}
+              {{ ws.profile?.name || ws.user?.email }}
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="ws.signOut()">Sign Out</el-dropdown-item>
+                <el-dropdown-item @click="openSettings('profile')">
+                  Profile & Settings
+                </el-dropdown-item>
+                <el-dropdown-item divided @click="ws.signOut()">
+                  Sign Out
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -618,8 +694,14 @@ async function saveEnvVars() {
       </div>
     </el-header>
 
-    <el-container class="main-body">
-      <el-aside width="280px" class="sidebar desktop-sidebar">
+    <el-container
+      class="main-body"
+      :class="{ 'sidebar-on-right': settings.sidebarPosition === 'right' }"
+    >
+      <el-aside
+        :width="`${settings.sidebarWidth}px`"
+        class="sidebar desktop-sidebar"
+      >
         <el-tabs v-model="sidebarTab" stretch>
           <el-tab-pane label="Collections" name="collections">
             <template v-if="ws.isAuthenticated">
@@ -770,6 +852,12 @@ async function saveEnvVars() {
         </el-tabs>
       </el-aside>
 
+      <div
+        class="sidebar-resizer desktop-sidebar"
+        title="Drag to resize sidebar"
+        @mousedown="startSidebarResize"
+      />
+
       <el-main class="workspace" v-if="tab">
         <RealtimePanel
           v-if="clientProtocol !== 'http'"
@@ -819,6 +907,12 @@ async function saveEnvVars() {
           </div>
         </div>
 
+        <div
+          ref="splitContainerRef"
+          class="request-response-split"
+          :class="{ 'split-horizontal': settings.responsePosition === 'right' }"
+        >
+        <div class="request-pane">
         <el-tabs v-model="activeRequestTab" class="request-tabs">
           <el-tab-pane label="Params" name="params">
             <KeyValueTable
@@ -1052,8 +1146,23 @@ async function saveEnvVars() {
             />
           </el-tab-pane>
         </el-tabs>
+        </div>
 
-        <div class="response-section kt-card kt-card-bordered">
+        <div
+          class="response-resizer"
+          :class="{ 'is-vertical': settings.responsePosition === 'right' }"
+          title="Drag to resize response panel"
+          @mousedown="startResponseResize"
+        />
+
+        <div
+          class="response-section kt-card kt-card-bordered"
+          :style="
+            settings.responsePosition === 'right'
+              ? { width: `${settings.responseSizePercent}%`, flex: 'none' }
+              : { height: `${settings.responseSizePercent}%`, flex: 'none' }
+          "
+        >
           <div class="response-header">
             <span>Response</span>
             <div v-if="tab.response" class="response-meta">
@@ -1161,6 +1270,7 @@ async function saveEnvVars() {
               <pre v-if="tab.scriptLogs.length" class="response-pre" style="margin-top: 8px">{{ tab.scriptLogs.join('\n') }}</pre>
             </el-tab-pane>
           </el-tabs>
+        </div>
         </div>
         </template>
       </el-main>
@@ -1435,7 +1545,7 @@ async function saveEnvVars() {
     <el-drawer
       v-model="mobileSidebarVisible"
       title="Workspace"
-      direction="ltr"
+      :direction="settings.sidebarPosition === 'right' ? 'rtl' : 'ltr'"
       size="290px"
     >
       <el-tabs v-model="sidebarTab" stretch>
@@ -1483,6 +1593,11 @@ async function saveEnvVars() {
         </el-tab-pane>
       </el-tabs>
     </el-drawer>
+
+    <SettingsDialog
+      v-model:visible="settingsVisible"
+      :initial-tab="settingsInitialTab"
+    />
   </el-container>
 </template>
 
@@ -1552,10 +1667,60 @@ body {
 .main-body {
   overflow: hidden;
 }
+.main-body.sidebar-on-right {
+  flex-direction: row-reverse;
+}
 .sidebar {
   border-right: 1px solid #e4e7ed;
   padding: 8px 12px;
   overflow-y: auto;
+  flex-shrink: 0;
+}
+.sidebar-on-right .sidebar {
+  border-right: none;
+  border-left: 1px solid #e4e7ed;
+}
+.sidebar-resizer {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.sidebar-resizer:hover {
+  background: #409eff;
+}
+.request-response-split {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 4px;
+}
+.request-response-split.split-horizontal {
+  flex-direction: row;
+}
+.request-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 160px;
+  overflow-y: auto;
+}
+.response-resizer {
+  height: 5px;
+  cursor: row-resize;
+  background: transparent;
+  border-radius: 4px;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.response-resizer.is-vertical {
+  width: 5px;
+  height: auto;
+  cursor: col-resize;
+}
+.response-resizer:hover {
+  background: #409eff;
 }
 .sidebar-toolbar {
   display: flex;
@@ -1655,11 +1820,12 @@ body {
   gap: 8px;
 }
 .response-section {
-  margin-top: 8px;
   padding: 12px 14px;
-  flex: 1;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  min-width: 220px;
+  min-height: 160px;
 }
 .response-header {
   display: flex;
@@ -1773,5 +1939,32 @@ body {
   .env-actions {
     flex-wrap: wrap;
   }
+  .request-response-split.split-horizontal {
+    flex-direction: column;
+  }
+  .response-section {
+    width: 100% !important;
+    height: auto !important;
+  }
+}
+
+:global(html.dark) .app-shell {
+  background: #141414;
+  color: #e5eaf3;
+}
+:global(html.dark) .top-bar,
+:global(html.dark) .sidebar {
+  border-color: #303030;
+}
+:global(html.dark) .response-pre {
+  background: #1d1e1f;
+  border-color: #363637;
+  color: #e5eaf3;
+}
+:global(html.dark) .history-item {
+  border-color: #2b2b2c;
+}
+:global(html.dark) .history-item:hover {
+  background: #262727;
 }
 </style>
