@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { EnvVariable, FormDataItem, HttpMethod } from '@api-open/shared';
 import {
   Delete,
@@ -9,6 +9,7 @@ import {
   Menu,
   Moon,
   Plus,
+  Search,
   Setting,
   Sunny,
   Upload,
@@ -112,6 +113,146 @@ const fetchingOAuthToken = ref(false);
 const settingsVisible = ref(false);
 const settingsInitialTab = ref<'layout' | 'profile'>('layout');
 const splitContainerRef = ref<HTMLElement | null>(null);
+
+// Search API (Command Palette) & Keyboard Shortcuts
+const urlInputRef = ref<{ focus?: () => void } | null>(null);
+const searchDialogVisible = ref(false);
+const searchQuery = ref('');
+const searchInputRef = ref<{ focus?: () => void } | null>(null);
+const shortcutsDialogVisible = ref(false);
+const sidebarHidden = ref(false);
+
+const shortcutsList = [
+  { keys: 'Ctrl / Cmd + K', desc: 'Search API (Collections & History)' },
+  { keys: 'Ctrl / Cmd + Enter', desc: 'Send active request' },
+  { keys: 'Ctrl / Cmd + S', desc: 'Save active request' },
+  { keys: 'Ctrl / Cmd + L', desc: 'Focus URL bar' },
+  { keys: 'Alt + T / Ctrl+Alt+N', desc: 'Open new request tab' },
+  { keys: 'Alt + W', desc: 'Close active request tab' },
+  { keys: 'Ctrl / Cmd + B', desc: 'Toggle sidebar' },
+  { keys: 'Ctrl / Cmd + I', desc: 'Import cURL' },
+  { keys: 'Ctrl / Cmd + ,', desc: 'Open Settings & Profile' },
+  { keys: 'Ctrl / Cmd + /', desc: 'Show keyboard shortcuts' },
+];
+
+const searchableRequests = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  const items: Array<{
+    kind: 'saved' | 'history';
+    id: string;
+    name: string;
+    method: HttpMethod;
+    url: string;
+    rawReq?: (typeof ws.collections)[number]['requests'][number];
+  }> = [];
+
+  for (const col of ws.collections) {
+    for (const req of col.requests ?? []) {
+      items.push({
+        kind: 'saved',
+        id: req.id,
+        name: `${col.name} / ${req.name}`,
+        method: req.method,
+        url: req.url,
+        rawReq: req,
+      });
+    }
+  }
+
+  for (const h of store.history) {
+    items.push({
+      kind: 'history',
+      id: h.id,
+      name: 'History',
+      method: h.method,
+      url: h.url,
+    });
+  }
+
+  if (!q) return items.slice(0, 20);
+  return items
+    .filter(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        item.url.toLowerCase().includes(q) ||
+        item.method.toLowerCase().includes(q),
+    )
+    .slice(0, 20);
+});
+
+function openSearchPalette() {
+  searchQuery.value = '';
+  searchDialogVisible.value = true;
+  nextTick(() => {
+    searchInputRef.value?.focus?.();
+  });
+}
+
+function selectSearchItem(item: (typeof searchableRequests.value)[number]) {
+  if (item.kind === 'saved' && item.rawReq) {
+    store.openSavedRequest(item.rawReq);
+  } else {
+    store.addTab({ method: item.method, url: item.url, name: item.url });
+  }
+  searchDialogVisible.value = false;
+}
+
+function handleGlobalKeydown(e: KeyboardEvent) {
+  const mod = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+
+  if (mod && key === 'k') {
+    e.preventDefault();
+    openSearchPalette();
+    return;
+  }
+  if (mod && key === 'enter') {
+    e.preventDefault();
+    if (clientProtocol.value === 'http') {
+      store.sendActiveRequest();
+    }
+    return;
+  }
+  if (mod && key === 's') {
+    e.preventDefault();
+    handleSaveClick();
+    return;
+  }
+  if (mod && key === 'l') {
+    e.preventDefault();
+    urlInputRef.value?.focus?.();
+    return;
+  }
+  if ((e.altKey && key === 't') || (mod && e.altKey && key === 'n')) {
+    e.preventDefault();
+    store.addTab();
+    return;
+  }
+  if (e.altKey && key === 'w') {
+    e.preventDefault();
+    if (tab.value) store.closeTab(tab.value.id);
+    return;
+  }
+  if (mod && key === 'b') {
+    e.preventDefault();
+    sidebarHidden.value = !sidebarHidden.value;
+    return;
+  }
+  if (mod && key === 'i') {
+    e.preventDefault();
+    curlDialogVisible.value = true;
+    return;
+  }
+  if (mod && key === ',') {
+    e.preventDefault();
+    openSettings('layout');
+    return;
+  }
+  if (mod && key === '/') {
+    e.preventDefault();
+    shortcutsDialogVisible.value = true;
+  }
+}
 
 function openSettings(tabName: 'layout' | 'profile' = 'layout') {
   settingsInitialTab.value = tabName;
@@ -247,6 +388,11 @@ function insertTestTemplate(kind: 'status' | 'json' | 'env') {
 
 onMounted(() => {
   ws.initAuth();
+  window.addEventListener('keydown', handleGlobalKeydown);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleGlobalKeydown);
 });
 
 const formattedBody = computed(() => {
@@ -686,11 +832,27 @@ async function saveEnvVars() {
       </div>
 
       <div class="top-actions">
+        <el-button
+          size="small"
+          :icon="Search"
+          title="Search API (Ctrl+K)"
+          @click="openSearchPalette"
+        >
+          Search (Ctrl+K)
+        </el-button>
         <el-button size="small" @click="curlDialogVisible = true">
           Import cURL
         </el-button>
         <el-button size="small" @click="snippetDialogVisible = true">
           Code
+        </el-button>
+        <el-button
+          size="small"
+          plain
+          title="Keyboard Shortcuts (Ctrl+/)"
+          @click="shortcutsDialogVisible = true"
+        >
+          ?
         </el-button>
         <el-button
           size="small"
@@ -783,6 +945,7 @@ async function saveEnvVars() {
       :class="`sidebar-pos-${settings.sidebarPosition}`"
     >
       <el-aside
+        v-show="!sidebarHidden"
         :width="isSidebarVertical ? '100%' : `${settings.sidebarWidth}px`"
         :style="isSidebarVertical ? { height: `${settings.sidebarHeight}px` } : {}"
         class="sidebar desktop-sidebar"
@@ -955,6 +1118,7 @@ async function saveEnvVars() {
       </el-aside>
 
       <div
+        v-show="!sidebarHidden"
         class="sidebar-resizer desktop-sidebar"
         :class="{ 'is-horizontal': isSidebarVertical }"
         title="Drag to resize sidebar"
@@ -1016,6 +1180,7 @@ async function saveEnvVars() {
             </el-option>
           </el-select>
           <el-input
+            ref="urlInputRef"
             v-model="tab.url"
             class="url-input"
             placeholder="Enter URL (supports {{variable}} syntax)"
@@ -1842,6 +2007,62 @@ async function saveEnvVars() {
       v-model:visible="settingsVisible"
       :initial-tab="settingsInitialTab"
     />
+
+    <!-- Quick Search API Dialog (Ctrl+K) -->
+    <el-dialog
+      v-model="searchDialogVisible"
+      title="Search API (Collections & History)"
+      width="min(94vw, 560px)"
+    >
+      <el-input
+        ref="searchInputRef"
+        v-model="searchQuery"
+        :prefix-icon="Search"
+        placeholder="Search by endpoint name, URL, or method..."
+        clearable
+        @keyup.enter="searchableRequests[0] && selectSearchItem(searchableRequests[0])"
+      />
+      <div class="search-results-list">
+        <el-empty
+          v-if="!searchableRequests.length"
+          description="No matching API requests"
+          :image-size="50"
+        />
+        <div
+          v-for="item in searchableRequests"
+          :key="`${item.kind}-${item.id}`"
+          class="history-item"
+          @click="selectSearchItem(item)"
+        >
+          <span class="method-badge" :class="`method-${item.method}`">
+            {{ item.method }}
+          </span>
+          <div style="overflow: hidden; flex: 1">
+            <div style="font-size: 13px; font-weight: 600">{{ item.name }}</div>
+            <div class="history-url">{{ item.url }}</div>
+          </div>
+          <el-tag size="small" effect="plain">
+            {{ item.kind === 'saved' ? 'Saved' : 'History' }}
+          </el-tag>
+        </div>
+      </div>
+    </el-dialog>
+
+    <!-- Keyboard Shortcuts Cheat Sheet -->
+    <el-dialog
+      v-model="shortcutsDialogVisible"
+      title="Keyboard Shortcuts"
+      width="min(94vw, 480px)"
+    >
+      <el-table :data="shortcutsList" size="small" border>
+        <el-table-column label="Shortcut" width="185">
+          <template #default="{ row }">
+            <kbd class="kbd-key">{{ row.keys }}</kbd>
+          </template>
+        </el-table-column>
+        <el-table-column prop="desc" label="Action" />
+      </el-table>
+    </el-dialog>
   </el-container>
 </template>
 
@@ -2211,6 +2432,22 @@ async function saveEnvVars() {
   padding: 12px;
   border: 1px dashed var(--ao-border);
   border-radius: 6px;
+}
+.search-results-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.kbd-key {
+  font-family: Consolas, Monaco, monospace;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--ao-border);
+  background: var(--ao-surface-elevated);
 }
 
 @media (max-width: 900px) {
