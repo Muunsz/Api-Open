@@ -159,6 +159,17 @@ const variablesDrawerVisible = ref(false);
 const supportDialogVisible = ref(false);
 const consoleDrawerVisible = ref(false);
 const overviewDialogVisible = ref(false);
+const overviewTabActive = ref(false);
+const overviewSubTab = ref<'docs' | 'updates' | 'settings'>('docs');
+watch(
+  () => store.activeTabId,
+  () => {
+    overviewTabActive.value = false;
+  }
+);
+function openOverviewTab() {
+  overviewTabActive.value = true;
+}
 const notifTab = ref<'all' | 'error' | 'activity'>('all');
 const sidebarSections = ref<string[]>(['environments']);
 const filteredNotifications = computed(() => {
@@ -1584,37 +1595,197 @@ async function saveEnvVars() {
         />
 
         <template v-else>
-        <el-tabs
-          v-model="store.activeTabId"
-          type="card"
-          editable
-          @edit="handleTabEdit"
-          class="request-doc-tabs"
-        >
-          <el-tab-pane
-            v-for="t in store.tabs"
-            :key="t.id"
-            :name="t.id"
+        <div class="workspace-tab-header">
+          <button
+            type="button"
+            class="overview-pill-btn"
+            :class="{ active: overviewTabActive }"
+            title="Workspace Overview"
+            @click="openOverviewTab"
           >
-            <template #label>
-              <span style="display: inline-flex; align-items: center; gap: 6px">
-                <span class="method-badge" :class="`method-${t.method}`">
-                  {{ t.method }}
-                </span>
-                <span>
-                  {{
-                    t.savedRequestId
-                      ? t.name
-                      : t.url
-                        ? t.url.replace(/^https?:\/\//, '').slice(0, 20)
-                        : t.name
-                  }}
-                </span>
-              </span>
-            </template>
-          </el-tab-pane>
-        </el-tabs>
+            <el-icon><House /></el-icon>
+            <span>Overview</span>
+          </button>
 
+          <el-tabs
+            v-model="store.activeTabId"
+            type="card"
+            editable
+            @edit="handleTabEdit"
+            @tab-click="overviewTabActive = false"
+            class="request-doc-tabs"
+          >
+            <el-tab-pane
+              v-for="t in store.tabs"
+              :key="t.id"
+              :name="t.id"
+            >
+              <template #label>
+                <span style="display: inline-flex; align-items: center; gap: 6px">
+                  <span class="method-badge" :class="`method-${t.method}`">
+                    {{ t.method }}
+                  </span>
+                  <span>
+                    {{
+                      t.savedRequestId
+                        ? t.name
+                        : t.url
+                          ? t.url.replace(/^https?:\/\//, '').slice(0, 20)
+                          : t.name
+                    }}
+                  </span>
+                </span>
+              </template>
+            </el-tab-pane>
+          </el-tabs>
+
+          <div class="workspace-tab-right">
+            <el-select
+              v-if="ws.isAuthenticated"
+              v-model="ws.activeEnvId"
+              size="small"
+              clearable
+              placeholder="No Environment"
+              class="tab-env-select"
+            >
+              <el-option
+                v-for="env in ws.environments"
+                :key="env.id"
+                :label="env.name"
+                :value="env.id"
+              />
+            </el-select>
+            <el-button
+              size="small"
+              text
+              :icon="Key"
+              title="All Variables & Local Vault"
+              @click="variablesDrawerVisible = true"
+            />
+          </div>
+        </div>
+
+        <div v-if="overviewTabActive" class="workspace-overview-page">
+          <div class="overview-page-header">
+            <div>
+              <h2 class="overview-title">
+                {{ ws.workspaces.find((w) => w.id === ws.activeWorkspaceId)?.name ?? 'Personal Workspace' }}
+              </h2>
+              <div class="overview-meta">
+                <span>{{ ws.profile?.name || ws.user?.email || 'Local User' }}</span>
+                <span>•</span>
+                <span>{{ ws.collectionTree.length }} collection(s)</span>
+                <span>•</span>
+                <span>{{ ws.environments.length }} environment(s)</span>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center">
+              <el-button size="small" :icon="Download" @click="exportAllCollections">
+                Export Collections
+              </el-button>
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :icon="Plus"
+                @click="store.addTab(); overviewTabActive = false"
+              >
+                New Request
+              </el-button>
+            </div>
+          </div>
+
+          <el-input
+            v-model="workspaceSummary"
+            size="small"
+            placeholder="Add a short summary for this workspace..."
+            class="overview-summary-input"
+          />
+
+          <el-tabs v-model="overviewSubTab" class="overview-subtabs">
+            <el-tab-pane label="Docs" name="docs">
+              <div class="overview-docs-section">
+                <div class="overview-section-label">Workspace README</div>
+                <el-input
+                  v-model="workspaceReadme"
+                  type="textarea"
+                  :rows="7"
+                  placeholder="Write workspace documentation, base URLs, auth notes, or onboarding instructions (saved locally)..."
+                />
+              </div>
+              <div class="overview-docs-section" style="margin-top: 16px">
+                <div class="overview-section-label">Collections in Workspace</div>
+                <div v-if="ws.collectionTree.length" class="overview-collections-grid">
+                  <div
+                    v-for="col in ws.collectionTree"
+                    :key="col.id"
+                    class="overview-collection-card"
+                  >
+                    <div style="display: flex; align-items: center; gap: 8px">
+                      <el-icon><Folder /></el-icon>
+                      <span style="font-weight: 600">{{ col.label }}</span>
+                    </div>
+                    <div style="display: flex; gap: 4px">
+                      <el-button size="small" link type="success" @click="openRunner(col)">
+                        Run
+                      </el-button>
+                      <el-button size="small" link @click="openDocsModal(col)">
+                        Docs
+                      </el-button>
+                      <el-button size="small" link @click="handleExportCollection(col)">
+                        Export
+                      </el-button>
+                    </div>
+                  </div>
+                </div>
+                <el-empty v-else description="No collections in this workspace yet" :image-size="48" />
+              </div>
+            </el-tab-pane>
+
+            <el-tab-pane label="Updates" name="updates">
+              <div v-if="consoleStore.logs.length" class="overview-updates-list">
+                <div
+                  v-for="entry in consoleStore.logs"
+                  :key="entry.id"
+                  class="overview-update-row"
+                >
+                  <div style="display: flex; align-items: center; gap: 8px">
+                    <el-tag
+                      size="small"
+                      :type="entry.type === 'error' ? 'danger' : entry.type === 'http' ? 'success' : 'info'"
+                    >
+                      {{ entry.type.toUpperCase() }}
+                    </el-tag>
+                    <span>{{ entry.message }}</span>
+                  </div>
+                  <span style="font-size: 11px; opacity: 0.6; white-space: nowrap">
+                    {{ entry.timestamp.slice(11, 19) }}
+                  </span>
+                </div>
+              </div>
+              <el-empty v-else description="No recent updates or activity" :image-size="48" />
+            </el-tab-pane>
+
+            <el-tab-pane label="Settings" name="settings">
+              <div style="display: flex; flex-wrap: wrap; gap: 10px; padding-top: 4px">
+                <el-button :icon="Collection" @click="openEnvDialog">
+                  Manage Environments
+                </el-button>
+                <el-button :icon="Key" @click="variablesDrawerVisible = true">
+                  Local Vault &amp; All Variables
+                </el-button>
+                <el-button v-if="ws.isAuthenticated" @click="teamDialogVisible = true">
+                  Team &amp; Members
+                </el-button>
+                <el-button type="primary" plain :icon="Download" @click="exportAllCollections">
+                  Export All Collections
+                </el-button>
+              </div>
+            </el-tab-pane>
+          </el-tabs>
+        </div>
+
+        <template v-else>
         <div class="request-bar">
           <el-select
             v-model="tab.method"
@@ -2146,6 +2317,7 @@ async function saveEnvVars() {
           </el-tabs>
         </div>
         </div>
+        </template>
         </template>
       </el-main>
 
@@ -3468,5 +3640,115 @@ async function saveEnvVars() {
 .notif-msg {
   margin-top: 4px;
   word-break: break-word;
+}
+.workspace-tab-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--ao-border);
+  margin-bottom: 10px;
+}
+.workspace-tab-header .request-doc-tabs {
+  flex: 1;
+  min-width: 0;
+}
+.workspace-tab-header .request-doc-tabs :deep(.el-tabs__header) {
+  margin-bottom: 0;
+  border-bottom: none;
+}
+.overview-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ao-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.overview-pill-btn:hover {
+  background: var(--ao-surface-2);
+  color: var(--ao-text);
+}
+.overview-pill-btn.active {
+  background: var(--ao-surface-2);
+  border-color: var(--ao-border);
+  color: var(--ao-text);
+}
+.workspace-tab-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.tab-env-select {
+  width: 145px;
+}
+.workspace-overview-page {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 8px;
+  max-width: 920px;
+}
+.overview-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.overview-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+.overview-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ao-text-muted);
+  margin-top: 4px;
+}
+.overview-summary-input {
+  margin-bottom: 14px;
+}
+.overview-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ao-text-muted);
+  margin-bottom: 6px;
+}
+.overview-collections-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.overview-collection-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--ao-border);
+  border-radius: 8px;
+  background: var(--ao-surface-2);
+}
+.overview-updates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.overview-update-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--ao-surface-2);
+  font-size: 12px;
 }
 </style>
