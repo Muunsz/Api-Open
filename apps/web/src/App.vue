@@ -2117,8 +2117,8 @@ async function saveEnvVars() {
   padding: 0;
 }
 .brand-full-logo {
-  height: 44px;
-  width: auto;
+  width: 140px;
+  height: 42px;
   object-fit: contain;
   display: block;
 }
