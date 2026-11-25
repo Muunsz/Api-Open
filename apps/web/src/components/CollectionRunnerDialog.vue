@@ -207,21 +207,34 @@ async function startRun() {
       <div v-for="item in results" :key="item.id" class="runner-item">
         <div class="runner-item-head">
           <div class="runner-item-title">
-            <el-tag size="small" effect="plain">{{ item.method }}</el-tag>
+            <span class="method-badge" :class="`method-${item.method}`">
+              {{ item.method }}
+            </span>
             <strong>{{ item.name }}</strong>
             <el-text size="small" type="info">{{ item.url }}</el-text>
           </div>
           <div class="runner-item-meta">
-            <el-tag
+            <span
               v-if="item.statusCode"
-              :type="item.statusCode < 400 ? 'success' : 'danger'"
-              size="small"
+              class="status-badge"
+              :class="
+                item.statusCode < 300
+                  ? 'status-2xx'
+                  : item.statusCode < 400
+                    ? 'status-3xx'
+                    : item.statusCode < 500
+                      ? 'status-4xx'
+                      : 'status-5xx'
+              "
             >
               {{ item.statusCode }}
-            </el-tag>
-            <el-tag v-if="item.durationMs !== undefined" size="small" type="info">
+            </span>
+            <span
+              v-if="item.durationMs !== undefined"
+              class="status-badge status-1xx"
+            >
               {{ item.durationMs }} ms
-            </el-tag>
+            </span>
           </div>
         </div>
         <el-text v-if="item.error" type="danger" size="small">

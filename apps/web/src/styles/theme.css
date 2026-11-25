@@ -95,6 +95,46 @@ body {
   background: rgba(6, 182, 212, 0.12);
 }
 
+/* HTTP Method text color for select input */
+.method-color-GET { color: #10b981; }
+.method-color-POST { color: #f59e0b; }
+.method-color-PUT { color: #3b82f6; }
+.method-color-PATCH { color: #8b5cf6; }
+.method-color-DELETE { color: #ef4444; }
+.method-color-HEAD,
+.method-color-OPTIONS { color: #06b6d4; }
+
+/* HTTP Status semantic badges */
+.status-badge {
+  font-weight: 700;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.status-1xx {
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.14);
+}
+.status-2xx {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.14);
+}
+.status-3xx {
+  color: #06b6d4;
+  background: rgba(6, 182, 212, 0.14);
+}
+.status-4xx {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+}
+.status-5xx {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+}
+
 /* KTUI dark-mode card/badge alignment */
 html.dark .kt-card {
   background-color: var(--ao-surface);

@@ -293,12 +293,19 @@ const imageDataUrl = computed(() => {
   return `data:${ct};base64,${res.body}`;
 });
 
-function statusTagType(code?: number) {
-  if (!code) return 'info';
-  if (code >= 200 && code < 300) return 'success';
-  if (code >= 400 && code < 500) return 'warning';
-  if (code >= 500) return 'danger';
-  return 'info';
+function statusClass(code?: number): string {
+  if (!code) return 'status-1xx';
+  if (code >= 200 && code < 300) return 'status-2xx';
+  if (code >= 300 && code < 400) return 'status-3xx';
+  if (code >= 400 && code < 500) return 'status-4xx';
+  if (code >= 500) return 'status-5xx';
+  return 'status-1xx';
+}
+
+function durationClass(ms: number): string {
+  if (ms < 300) return 'status-2xx';
+  if (ms < 1000) return 'status-4xx';
+  return 'status-5xx';
 }
 
 function formatBytes(bytes: number): string {
@@ -933,6 +940,14 @@ async function saveEnvVars() {
                   {{ item.method }}
                 </span>
                 <span class="history-url" :title="item.url">{{ item.url }}</span>
+                <span
+                  v-if="item.statusCode"
+                  class="status-badge"
+                  :class="statusClass(item.statusCode)"
+                  style="margin-left: auto; font-size: 11px; padding: 1px 6px"
+                >
+                  {{ item.statusCode }}
+                </span>
               </div>
             </div>
           </el-tab-pane>
@@ -965,12 +980,37 @@ async function saveEnvVars() {
             v-for="t in store.tabs"
             :key="t.id"
             :name="t.id"
-            :label="`${t.method} ${t.savedRequestId ? t.name : t.url ? t.url.replace(/^https?:\/\//, '').slice(0, 22) : t.name}`"
-          />
+          >
+            <template #label>
+              <span style="display: inline-flex; align-items: center; gap: 6px">
+                <span class="method-badge" :class="`method-${t.method}`">
+                  {{ t.method }}
+                </span>
+                <span>
+                  {{
+                    t.savedRequestId
+                      ? t.name
+                      : t.url
+                        ? t.url.replace(/^https?:\/\//, '').slice(0, 20)
+                        : t.name
+                  }}
+                </span>
+              </span>
+            </template>
+          </el-tab-pane>
         </el-tabs>
 
         <div class="request-bar">
-          <el-select v-model="tab.method" class="method-select">
+          <el-select
+            v-model="tab.method"
+            class="method-select"
+            :class="`method-select-${tab.method}`"
+          >
+            <template #label="{ value }">
+              <span :class="`method-color-${value}`" style="font-weight: 700">
+                {{ value }}
+              </span>
+            </template>
             <el-option v-for="m in methods" :key="m" :label="m" :value="m">
               <span class="method-badge" :class="`method-${m}`">{{ m }}</span>
             </el-option>
@@ -1360,6 +1400,13 @@ async function saveEnvVars() {
 
         <div
           class="response-section kt-card kt-card-bordered"
+          :class="
+            tab.error
+              ? 'resp-accent-error'
+              : tab.response
+                ? `resp-accent-${statusClass(tab.response.statusCode)}`
+                : ''
+          "
           :style="
             isResponseHorizontal
               ? { width: `${settings.responseSizePercent}%`, flex: 'none' }
@@ -1369,24 +1416,18 @@ async function saveEnvVars() {
           <div class="response-header">
             <span>Response</span>
             <div v-if="tab.response" class="response-meta">
-              <span
-                class="kt-badge kt-badge-sm"
-                :class="
-                  tab.response.statusCode < 300
-                    ? 'kt-badge-success'
-                    : tab.response.statusCode < 500
-                      ? 'kt-badge-warning'
-                      : 'kt-badge-danger'
-                "
-              >
+              <span class="status-badge" :class="statusClass(tab.response.statusCode)">
                 {{ tab.response.statusCode }} {{ tab.response.statusText }}
               </span>
-              <span class="kt-badge kt-badge-sm kt-badge-outline kt-badge-secondary">
+              <span class="status-badge" :class="durationClass(tab.response.durationMs)">
                 {{ tab.response.durationMs }} ms
               </span>
               <span class="kt-badge kt-badge-sm kt-badge-outline kt-badge-secondary">
                 {{ formatBytes(tab.response.sizeBytes) }}
               </span>
+            </div>
+            <div v-else-if="tab.error" class="response-meta">
+              <span class="status-badge status-5xx">Error</span>
             </div>
           </div>
 
@@ -2085,6 +2126,19 @@ async function saveEnvVars() {
   overflow-y: auto;
   min-width: 220px;
   min-height: 160px;
+}
+.resp-accent-status-2xx {
+  border-top: 3px solid #10b981;
+}
+.resp-accent-status-3xx {
+  border-top: 3px solid #06b6d4;
+}
+.resp-accent-status-4xx {
+  border-top: 3px solid #f59e0b;
+}
+.resp-accent-status-5xx,
+.resp-accent-error {
+  border-top: 3px solid #ef4444;
 }
 .response-header {
   display: flex;
