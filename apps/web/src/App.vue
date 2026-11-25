@@ -816,10 +816,11 @@ async function saveEnvVars() {
 </script>
 
 <template>
-  <el-container
-    class="app-shell"
-    :class="{ 'navbar-bottom': settings.navbarPosition === 'bottom' }"
-  >
+  <el-container class="app-shell">
+    <div
+      class="shell-content"
+      :class="{ 'navbar-bottom': settings.navbarPosition === 'bottom' }"
+    >
     <el-header height="auto" class="top-bar">
       <div class="top-left">
         <el-button
@@ -1713,6 +1714,65 @@ async function saveEnvVars() {
         </template>
       </el-main>
     </el-container>
+    </div>
+
+    <footer class="status-footer">
+      <div class="footer-left">
+        <button
+          type="button"
+          class="footer-btn"
+          title="Toggle Sidebar (Ctrl+B)"
+          @click="settings.sidebarHidden = !settings.sidebarHidden"
+        >
+          <el-icon><component :is="settings.sidebarHidden ? Expand : Fold" /></el-icon>
+          <span>{{ settings.sidebarHidden ? 'Show Sidebar' : 'Hide Sidebar' }}</span>
+        </button>
+        <span class="footer-status">
+          <span class="status-dot" />
+          Proxy Ready
+        </span>
+      </div>
+
+      <div class="footer-right">
+        <button
+          type="button"
+          class="footer-btn"
+          title="Keyboard Shortcuts (Ctrl+/)"
+          @click="shortcutsDialogVisible = true"
+        >
+          <span>? Shortcuts</span>
+        </button>
+        <button
+          type="button"
+          class="footer-btn"
+          title="Toggle Horizontal / Vertical Response Layout"
+          @click="
+            settings.responsePosition =
+              isResponseHorizontal ? 'bottom' : 'right'
+          "
+        >
+          <span>{{ isResponseHorizontal ? 'Vertical Layout' : 'Horizontal Layout' }}</span>
+        </button>
+        <button
+          type="button"
+          class="footer-btn"
+          title="Toggle Theme"
+          @click="settings.toggleTheme"
+        >
+          <el-icon>
+            <component :is="settings.effectiveTheme === 'dark' ? Sunny : Moon" />
+          </el-icon>
+        </button>
+        <button
+          type="button"
+          class="footer-btn"
+          title="Settings (Ctrl+,)"
+          @click="openSettings('layout')"
+        >
+          <el-icon><Setting /></el-icon>
+        </button>
+      </div>
+    </footer>
 
     <!-- Auth Dialog -->
     <el-dialog v-model="authDialogVisible" width="min(92vw, 400px)" align-center>
@@ -2117,12 +2177,64 @@ async function saveEnvVars() {
   display: flex;
   flex-direction: column;
 }
-.app-shell.navbar-bottom {
+.shell-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.shell-content.navbar-bottom {
   flex-direction: column-reverse;
 }
-.app-shell.navbar-bottom .top-bar {
+.shell-content.navbar-bottom .top-bar {
   border-bottom: none;
   border-top: 1px solid var(--ao-border);
+}
+.status-footer {
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  font-size: 11.5px;
+  background: var(--ao-surface);
+  border-top: 1px solid var(--ao-border);
+  color: var(--ao-text-muted);
+}
+.footer-left,
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.footer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--ao-text-muted);
+  cursor: pointer;
+  font-size: 11.5px;
+  line-height: 1;
+}
+.footer-btn:hover {
+  color: var(--ao-text);
+  background: var(--ao-hover);
+}
+.footer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
 }
 .top-bar {
   display: flex;
