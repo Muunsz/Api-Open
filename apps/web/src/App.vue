@@ -11,10 +11,13 @@ import {
   Expand,
   Fold,
   Folder,
+  Key,
   Menu,
+  Monitor,
   Moon,
   MoreFilled,
   Plus,
+  QuestionFilled,
   Search,
   Setting,
   Share,
@@ -29,6 +32,9 @@ import CookiesDialog from './components/CookiesDialog.vue';
 import KeyValueTable from './components/KeyValueTable.vue';
 import RealtimePanel from './components/RealtimePanel.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
+import SupportDialog from './components/SupportDialog.vue';
+import VariablesDrawer from './components/VariablesDrawer.vue';
+import { useConsoleStore } from './stores/console';
 import { useSettingsStore } from './stores/settings';
 import { useTabsStore } from './stores/tabs';
 import { type CollectionTreeNode, useWorkspaceStore } from './stores/workspace';
@@ -146,6 +152,23 @@ const searchInputRef = ref<{ focus?: () => void } | null>(null);
 const shortcutsDialogVisible = ref(false);
 const shortcutSearch = ref('');
 const cookiesDialogVisible = ref(false);
+const consoleStore = useConsoleStore();
+const variablesDrawerVisible = ref(false);
+const supportDialogVisible = ref(false);
+const consoleDrawerVisible = ref(false);
+const overviewDialogVisible = ref(false);
+const workspaceSummary = ref(
+  localStorage.getItem('api_open_workspace_summary_v1') ?? ''
+);
+const workspaceReadme = ref(
+  localStorage.getItem('api_open_workspace_readme_v1') ?? ''
+);
+watch(workspaceSummary, (val) =>
+  localStorage.setItem('api_open_workspace_summary_v1', val)
+);
+watch(workspaceReadme, (val) =>
+  localStorage.setItem('api_open_workspace_readme_v1', val)
+);
 
 const shortcutGroups = [
   {
@@ -760,6 +783,41 @@ function handleExportCollection(node: CollectionTreeNode) {
   a.download = `${node.label.replace(/[^a-zA-Z0-9_-]/g, '_')}.postman_collection.json`;
   a.click();
   URL.revokeObjectURL(url);
+  consoleStore.addLog({
+    type: 'activity',
+    message: `Exported collection "${node.label}"`,
+  });
+}
+
+function exportAllCollections() {
+  if (!ws.collectionTree.length) {
+    ElMessage.warning('No collections to export');
+    return;
+  }
+  const workspaceName =
+    ws.workspaces.find((w) => w.id === ws.activeWorkspaceId)?.name ??
+    'Workspace';
+  const bundle = {
+    exportedAt: new Date().toISOString(),
+    workspace: workspaceName,
+    collections: ws.collectionTree.map((node) =>
+      JSON.parse(exportPostmanCollection(node))
+    ),
+  };
+  const blob = new Blob([JSON.stringify(bundle, null, 2)], {
+    type: 'application/json',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `api-open-collections-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  consoleStore.addLog({
+    type: 'activity',
+    message: `Exported ${ws.collectionTree.length} collection(s)`,
+  });
+  ElMessage.success(`Exported ${ws.collectionTree.length} collection(s)`);
 }
 
 function triggerPostmanImport() {
@@ -1171,6 +1229,16 @@ async function saveEnvVars() {
                       </el-dropdown-menu>
                     </template>
                   </el-dropdown>
+                  <el-button
+                    size="small"
+                    :icon="Download"
+                    link
+                    type="primary"
+                    title="Export All Collections"
+                    @click="exportAllCollections"
+                  >
+                    Export
+                  </el-button>
                   <el-button
                     size="small"
                     :icon="Plus"
@@ -1937,6 +2005,22 @@ async function saveEnvVars() {
         <button
           type="button"
           class="rail-btn"
+          title="All Variables & Local Vault"
+          @click="variablesDrawerVisible = true"
+        >
+          <el-icon><Key /></el-icon>
+        </button>
+        <button
+          type="button"
+          class="rail-btn"
+          title="Workspace Overview & Activity"
+          @click="overviewDialogVisible = true"
+        >
+          <el-icon><Document /></el-icon>
+        </button>
+        <button
+          type="button"
+          class="rail-btn"
           title="Code Snippet"
           @click="snippetDialogVisible = true"
         >
@@ -1976,9 +2060,43 @@ async function saveEnvVars() {
         >
           <span>Cookies</span>
         </button>
+        <button
+          type="button"
+          class="footer-btn"
+          title="Toggle Console"
+          @click="consoleDrawerVisible = !consoleDrawerVisible"
+        >
+          <el-icon><Monitor /></el-icon>
+          <span>Console{{ consoleStore.logs.length ? ` (${consoleStore.logs.length})` : '' }}</span>
+        </button>
       </div>
 
       <div class="footer-right">
+        <button
+          type="button"
+          class="footer-btn"
+          title="All Variables & Local Vault"
+          @click="variablesDrawerVisible = true"
+        >
+          <span>Vars &amp; Vault</span>
+        </button>
+        <button
+          type="button"
+          class="footer-btn"
+          title="Workspace Overview & Activity"
+          @click="overviewDialogVisible = true"
+        >
+          <span>Overview</span>
+        </button>
+        <button
+          type="button"
+          class="footer-btn"
+          title="Support & Resources"
+          @click="supportDialogVisible = true"
+        >
+          <el-icon><QuestionFilled /></el-icon>
+          <span>Support</span>
+        </button>
         <button
           type="button"
           class="footer-btn"
@@ -2430,6 +2548,96 @@ async function saveEnvVars() {
         </div>
       </div>
     </el-drawer>
+
+    <VariablesDrawer
+      v-model:visible="variablesDrawerVisible"
+      @open-envs="openEnvDialog"
+    />
+
+    <SupportDialog
+      v-model:visible="supportDialogVisible"
+      @open-shortcuts="shortcutsDialogVisible = true"
+      @open-team="ElMessage.info('Invite team members via Workspace settings')"
+    />
+
+    <!-- Bottom Console Drawer -->
+    <el-drawer
+      v-model="consoleDrawerVisible"
+      title="Console"
+      direction="btt"
+      size="260px"
+    >
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px">
+        <el-text size="small" type="info">
+          HTTP requests, script logs, and workspace activity
+        </el-text>
+        <el-button size="small" link type="danger" @click="consoleStore.clearLogs">
+          Clear
+        </el-button>
+      </div>
+      <div v-if="consoleStore.logs.length" style="display: flex; flex-direction: column; gap: 4px; font-family: monospace; font-size: 12px">
+        <div
+          v-for="entry in consoleStore.logs"
+          :key="entry.id"
+          style="display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 4px; background: var(--ao-surface-2)"
+        >
+          <span style="opacity: 0.6; white-space: nowrap">{{ entry.timestamp.slice(11, 19) }}</span>
+          <el-tag
+            size="small"
+            :type="entry.type === 'error' ? 'danger' : entry.type === 'http' ? 'success' : entry.type === 'script' ? 'warning' : 'info'"
+          >
+            {{ entry.type.toUpperCase() }}
+          </el-tag>
+          <span style="word-break: break-all">{{ entry.message }}</span>
+        </div>
+      </div>
+      <el-empty v-else description="Console is empty" :image-size="48" />
+    </el-drawer>
+
+    <!-- Workspace Overview & Activity Dialog -->
+    <el-dialog
+      v-model="overviewDialogVisible"
+      :title="`${ws.workspaces.find((w) => w.id === ws.activeWorkspaceId)?.name ?? 'Workspace'} — Overview & Activity`"
+      width="min(94vw, 640px)"
+    >
+      <el-tabs>
+        <el-tab-pane label="Overview">
+          <div style="display: flex; flex-direction: column; gap: 12px">
+            <el-input
+              v-model="workspaceSummary"
+              placeholder="Add a short workspace summary..."
+            />
+            <el-input
+              v-model="workspaceReadme"
+              type="textarea"
+              :rows="6"
+              placeholder="Write workspace README / documentation (saved locally)..."
+            />
+            <div style="display: flex; justify-content: space-between; align-items: center">
+              <el-text size="small" type="info">
+                {{ ws.collectionTree.length }} collection(s) in workspace
+              </el-text>
+              <el-button type="primary" size="small" :icon="Download" @click="exportAllCollections">
+                Export All Collections
+              </el-button>
+            </div>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane label="Activity">
+          <div v-if="consoleStore.logs.length" style="display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto">
+            <div
+              v-for="entry in consoleStore.logs"
+              :key="entry.id"
+              style="display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 6px; background: var(--ao-surface-2); font-size: 12px"
+            >
+              <span>{{ entry.message }}</span>
+              <span style="opacity: 0.6; white-space: nowrap">{{ entry.timestamp.slice(11, 19) }}</span>
+            </div>
+          </div>
+          <el-empty v-else description="No activity recorded yet" :image-size="48" />
+        </el-tab-pane>
+      </el-tabs>
+    </el-dialog>
   </el-container>
 </template>
 

@@ -20,6 +20,7 @@ import {
 import { generateSnippet, type SnippetLang } from '../utils/snippetGenerator';
 import { buildUrlWithParams, parseQueryFromUrl } from '../utils/urlSync';
 import { resolveVariables } from '../utils/variables';
+import { useConsoleStore } from './console';
 import { useCookiesStore } from './cookies';
 import { useSettingsStore } from './settings';
 import { useWorkspaceStore } from './workspace';
@@ -453,7 +454,18 @@ export const useTabsStore = defineStore('tabs', () => {
     tab.scriptLogs = [];
     tab.scriptError = null;
 
-    let envSnapshot = { ...ws.activeVariablesMap, ...runtimeEnvOverrides.value };
+    const consoleStore = useConsoleStore();
+    const vaultMap: Record<string, string> = {};
+    for (const v of consoleStore.localVault) {
+      if (v.enabled && v.key.trim()) {
+        vaultMap[v.key.trim()] = v.value ?? '';
+      }
+    }
+    let envSnapshot = {
+      ...ws.activeVariablesMap,
+      ...vaultMap,
+      ...runtimeEnvOverrides.value,
+    };
 
     if (tab.preRequestScript.trim()) {
       const preResult = await runScriptInSandbox({
@@ -468,8 +480,18 @@ export const useTabsStore = defineStore('tabs', () => {
         envSnapshot = { ...envSnapshot, ...preResult.envUpdates };
       }
       tab.scriptLogs.push(...preResult.logs);
+      if (preResult.logs.length) {
+        consoleStore.addLog({
+          type: 'script',
+          message: `[Pre-request] ${preResult.logs.join(' | ')}`,
+        });
+      }
       if (preResult.error) {
         tab.scriptError = `Pre-request script error: ${preResult.error}`;
+        consoleStore.addLog({
+          type: 'error',
+          message: tab.scriptError,
+        });
       }
     }
 
@@ -502,6 +524,14 @@ export const useTabsStore = defineStore('tabs', () => {
       });
       tab.response = res;
       cookiesStore.captureFromResponseHeaders(resolvedUrl, res.headers);
+      consoleStore.addLog({
+        type: 'http',
+        method: tab.method,
+        url: resolvedUrl,
+        statusCode: res.statusCode,
+        durationMs: res.durationMs,
+        message: `${tab.method} ${resolvedUrl} → ${res.statusCode} (${res.durationMs}ms)`,
+      });
 
       if (tab.testScript.trim()) {
         const testOut = await runScriptInSandbox({
@@ -523,8 +553,18 @@ export const useTabsStore = defineStore('tabs', () => {
         }
         tab.testResults = testOut.tests;
         tab.scriptLogs.push(...testOut.logs);
+        if (testOut.logs.length) {
+          consoleStore.addLog({
+            type: 'script',
+            message: `[Test] ${testOut.logs.join(' | ')}`,
+          });
+        }
         if (testOut.error) {
           tab.scriptError = `Test script error: ${testOut.error}`;
+          consoleStore.addLog({
+            type: 'error',
+            message: tab.scriptError,
+          });
         }
       }
 
@@ -539,6 +579,12 @@ export const useTabsStore = defineStore('tabs', () => {
     } catch (err) {
       tab.error = err instanceof Error ? err.message : 'Request failed';
       tab.response = null;
+      consoleStore.addLog({
+        type: 'error',
+        method: tab.method,
+        url: resolvedUrl,
+        message: `${tab.method} ${resolvedUrl} — ${tab.error}`,
+      });
       saveHistory({
         id: uid(),
         method: tab.method,
