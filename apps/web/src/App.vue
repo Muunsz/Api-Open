@@ -2006,7 +2006,6 @@ async function saveEnvVars() {
     <el-dialog v-model="authDialogVisible" width="min(92vw, 400px)" align-center>
       <template #header>
         <div class="auth-dialog-header">
-          <img src="/API-OPEN-LOGO.png" alt="Api-Open" class="auth-logo-mark" />
           <img
             :src="
               settings.effectiveTheme === 'dark'
@@ -2521,13 +2520,8 @@ async function saveEnvVars() {
   gap: 6px;
   padding-top: 4px;
 }
-.auth-logo-mark {
-  width: 44px;
-  height: 44px;
-  object-fit: contain;
-}
 .auth-logo-wordmark {
-  height: 28px;
+  height: 44px;
   width: auto;
   object-fit: contain;
 }
