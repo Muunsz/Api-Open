@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { EnvVariable, FormDataItem, HttpMethod } from '@api-open/shared';
 import {
+  Bell,
   Clock,
   Collection,
   CopyDocument,
@@ -11,6 +12,7 @@ import {
   Expand,
   Fold,
   Folder,
+  House,
   Key,
   Menu,
   Monitor,
@@ -157,6 +159,14 @@ const variablesDrawerVisible = ref(false);
 const supportDialogVisible = ref(false);
 const consoleDrawerVisible = ref(false);
 const overviewDialogVisible = ref(false);
+const notifTab = ref<'all' | 'error' | 'activity'>('all');
+const sidebarSections = ref<string[]>(['environments']);
+const filteredNotifications = computed(() => {
+  if (notifTab.value === 'all') return consoleStore.logs.slice(0, 20);
+  return consoleStore.logs
+    .filter((entry) => entry.type === notifTab.value)
+    .slice(0, 20);
+});
 const workspaceSummary = ref(
   localStorage.getItem('api_open_workspace_summary_v1') ?? ''
 );
@@ -1076,6 +1086,32 @@ async function saveEnvVars() {
             class="brand-full-logo"
           />
         </div>
+        <el-dropdown trigger="click">
+          <el-button size="small" text :icon="House" title="Navigation Menu">
+            Home
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item @click="overviewDialogVisible = true">
+                Home / Workspace Overview
+              </el-dropdown-item>
+              <el-dropdown-item
+                @click="ws.isAuthenticated ? (teamDialogVisible = true) : (authDialogVisible = true)"
+              >
+                Workspaces &amp; Team
+              </el-dropdown-item>
+              <el-dropdown-item @click="openSearchPalette">
+                API Catalog (Ctrl+K)
+              </el-dropdown-item>
+              <el-dropdown-item divided @click="variablesDrawerVisible = true">
+                Variables &amp; Local Vault
+              </el-dropdown-item>
+              <el-dropdown-item @click="consoleDrawerVisible = true">
+                Reports &amp; Console
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-radio-group v-model="clientProtocol" size="small">
           <el-radio-button value="http">HTTP</el-radio-button>
           <el-radio-button value="graphql">GraphQL</el-radio-button>
@@ -1134,13 +1170,89 @@ async function saveEnvVars() {
           title="Toggle Dark / Light Mode"
           @click="settings.toggleTheme"
         />
-        <el-button
-          size="small"
-          circle
-          :icon="Setting"
-          title="Settings & Profile (Ctrl+,)"
-          @click="openSettings('layout')"
-        />
+        <el-popover placement="bottom-end" :width="340" trigger="click">
+          <template #reference>
+            <el-badge
+              :value="consoleStore.logs.length"
+              :hidden="!consoleStore.logs.length"
+              :max="99"
+            >
+              <el-button
+                size="small"
+                circle
+                :icon="Bell"
+                title="Notifications & Activity"
+              />
+            </el-badge>
+          </template>
+          <div class="notif-header">
+            <span style="font-weight: 600">Notifications</span>
+            <el-button
+              v-if="consoleStore.logs.length"
+              size="small"
+              link
+              type="danger"
+              @click="consoleStore.clearLogs"
+            >
+              Clear
+            </el-button>
+          </div>
+          <el-radio-group v-model="notifTab" size="small" style="margin-bottom: 10px">
+            <el-radio-button value="all">All</el-radio-button>
+            <el-radio-button value="activity">Activity</el-radio-button>
+            <el-radio-button value="error">Errors</el-radio-button>
+          </el-radio-group>
+          <div v-if="filteredNotifications.length" class="notif-list">
+            <div
+              v-for="item in filteredNotifications"
+              :key="item.id"
+              class="notif-item"
+            >
+              <div style="display: flex; justify-content: space-between; gap: 6px">
+                <el-tag
+                  size="small"
+                  :type="item.type === 'error' ? 'danger' : item.type === 'http' ? 'success' : 'info'"
+                >
+                  {{ item.type.toUpperCase() }}
+                </el-tag>
+                <span style="font-size: 11px; opacity: 0.6">{{ item.timestamp.slice(11, 19) }}</span>
+              </div>
+              <div class="notif-msg">{{ item.message }}</div>
+            </div>
+          </div>
+          <el-empty v-else description="No notifications" :image-size="42" />
+        </el-popover>
+
+        <el-dropdown trigger="click">
+          <el-button
+            size="small"
+            circle
+            :icon="Setting"
+            title="Settings & Help"
+          />
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item @click="openSettings('layout')">
+                App settings
+              </el-dropdown-item>
+              <el-dropdown-item @click="overviewDialogVisible = true">
+                Workspace settings &amp; overview
+              </el-dropdown-item>
+              <el-dropdown-item v-if="ws.isAuthenticated" @click="teamDialogVisible = true">
+                Team settings
+              </el-dropdown-item>
+              <el-dropdown-item v-if="ws.isAuthenticated" @click="openSettings('profile')">
+                Account settings
+              </el-dropdown-item>
+              <el-dropdown-item divided @click="supportDialogVisible = true">
+                Help &amp; Support
+              </el-dropdown-item>
+              <el-dropdown-item @click="shortcutsDialogVisible = true">
+                Keyboard shortcuts (Ctrl+/)
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
 
         <el-dropdown trigger="click">
           <el-button size="small" circle :icon="MoreFilled" title="Tools & Actions" />
@@ -1179,8 +1291,20 @@ async function saveEnvVars() {
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="openSettings('profile')">
-                  Profile & Settings
+                <el-dropdown-item disabled>
+                  <div style="line-height: 1.3">
+                    <div style="font-weight: 600">{{ ws.profile?.name || 'User' }}</div>
+                    <div style="font-size: 11px; opacity: 0.7">{{ ws.user?.email }}</div>
+                  </div>
+                </el-dropdown-item>
+                <el-dropdown-item divided @click="openSettings('profile')">
+                  Profile &amp; Settings
+                </el-dropdown-item>
+                <el-dropdown-item @click="variablesDrawerVisible = true">
+                  Local Vault &amp; Keys
+                </el-dropdown-item>
+                <el-dropdown-item @click="consoleDrawerVisible = true">
+                  Audit &amp; Console Logs
                 </el-dropdown-item>
                 <el-dropdown-item divided @click="ws.signOut()">
                   Sign Out
@@ -1326,6 +1450,65 @@ async function saveEnvVars() {
                   </div>
                 </template>
               </el-tree>
+
+              <el-collapse v-model="sidebarSections" class="sidebar-sections">
+                <el-collapse-item title="ENVIRONMENTS" name="environments">
+                  <div v-if="ws.environments.length" class="sidebar-section-list">
+                    <button
+                      v-for="env in ws.environments"
+                      :key="env.id"
+                      type="button"
+                      class="sidebar-section-item"
+                      :class="{ active: ws.activeEnvId === env.id }"
+                      @click="ws.activeEnvId = env.id"
+                    >
+                      <span>{{ env.name }}</span>
+                      <span class="sidebar-item-meta">{{ env.variables.length }} vars</span>
+                    </button>
+                  </div>
+                  <el-text v-else size="small" type="info">
+                    No environments yet
+                  </el-text>
+                  <div style="margin-top: 6px">
+                    <el-button size="small" :icon="Plus" @click="openEnvDialog">
+                      Manage
+                    </el-button>
+                  </div>
+                </el-collapse-item>
+
+                <el-collapse-item title="DOCUMENTS" name="documents">
+                  <el-text size="small" type="info">
+                    {{ workspaceSummary || 'No workspace summary yet.' }}
+                  </el-text>
+                  <div style="margin-top: 6px">
+                    <el-button size="small" :icon="Document" @click="overviewDialogVisible = true">
+                      Edit README
+                    </el-button>
+                  </div>
+                </el-collapse-item>
+
+                <el-collapse-item title="SPECS" name="specs">
+                  <el-text size="small" type="info">
+                    Import OpenAPI / Swagger JSON into Collections
+                  </el-text>
+                  <div style="margin-top: 6px">
+                    <el-button size="small" :icon="Upload" @click="triggerOpenApiImport">
+                      Import Spec
+                    </el-button>
+                  </div>
+                </el-collapse-item>
+
+                <el-collapse-item title="LOCAL VAULT" name="vault">
+                  <el-text size="small" type="info">
+                    {{ consoleStore.localVault.length }} secret(s) stored locally
+                  </el-text>
+                  <div style="margin-top: 6px">
+                    <el-button size="small" :icon="Key" @click="variablesDrawerVisible = true">
+                      Open Vault
+                    </el-button>
+                  </div>
+                </el-collapse-item>
+              </el-collapse>
             </template>
             <el-empty
               v-else
@@ -3214,5 +3397,76 @@ async function saveEnvVars() {
     width: 100% !important;
     height: auto !important;
   }
+}
+.sidebar-sections {
+  margin-top: 12px;
+  border-top: 1px solid var(--ao-border);
+}
+.sidebar-sections :deep(.el-collapse-item__header) {
+  height: 32px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: transparent;
+  color: var(--ao-text-muted);
+}
+.sidebar-sections :deep(.el-collapse-item__wrap) {
+  background: transparent;
+}
+.sidebar-sections :deep(.el-collapse-item__content) {
+  padding-bottom: 10px;
+}
+.sidebar-section-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sidebar-section-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ao-text);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.sidebar-section-item:hover {
+  background: var(--ao-surface-2);
+}
+.sidebar-section-item.active {
+  border-color: var(--el-color-primary);
+  background: var(--ao-surface-2);
+}
+.sidebar-item-meta {
+  font-size: 11px;
+  opacity: 0.65;
+}
+.notif-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.notif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.notif-item {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--ao-surface-2);
+  font-size: 12px;
+}
+.notif-msg {
+  margin-top: 4px;
+  word-break: break-word;
 }
 </style>
