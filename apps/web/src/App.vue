@@ -539,8 +539,11 @@ async function saveEnvVars() {
           @click="mobileSidebarVisible = true"
         />
         <div class="brand">
-          <img src="/API-OPEN-LOGO.png" alt="Api-Open" class="brand-logo" />
-          <span>API-OPEN</span>
+          <img
+            src="/API-OPEN-FULL-WARNA.jpg"
+            alt="Api-Open"
+            class="brand-full-logo"
+          />
         </div>
         <el-radio-group v-model="clientProtocol" size="small">
           <el-radio-button value="http">HTTP</el-radio-button>
@@ -1517,15 +1520,13 @@ body {
 .brand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: 0.3px;
 }
-.brand-logo {
-  width: 26px;
-  height: 26px;
+.brand-full-logo {
+  height: 32px;
+  width: auto;
+  border-radius: 6px;
   object-fit: contain;
+  display: block;
 }
 .auth-banner {
   background: #1b2434;
