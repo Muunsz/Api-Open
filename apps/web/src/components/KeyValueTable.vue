@@ -83,6 +83,13 @@ function removeRow(index: number) {
 </template>
 
 <style scoped>
+.kv-table {
+  width: 100%;
+  overflow-x: auto;
+}
+.kv-table :deep(.el-table) {
+  min-width: 520px;
+}
 .kv-actions {
   margin-top: 8px;
 }

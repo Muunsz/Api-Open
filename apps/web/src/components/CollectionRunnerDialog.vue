@@ -170,7 +170,7 @@ async function startRun() {
   <el-dialog
     :model-value="visible"
     :title="`Collection Runner: ${collectionNode?.label ?? ''}`"
-    width="760px"
+    width="min(94vw, 760px)"
     @update:model-value="emit('update:visible', $event)"
   >
     <div class="runner-toolbar">
@@ -248,6 +248,8 @@ async function startRun() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 12px;
 }
 .runner-stats {
@@ -271,6 +273,7 @@ async function startRun() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .runner-item-title {

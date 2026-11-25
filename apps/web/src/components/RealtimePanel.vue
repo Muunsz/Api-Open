@@ -237,8 +237,13 @@ onUnmounted(() => {
 }
 .request-bar {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+.request-bar :deep(.el-input) {
+  flex: 1;
+  min-width: 200px;
 }
 .ws-composer {
   display: flex;

@@ -6,6 +6,7 @@ import {
   Document,
   Download,
   Folder,
+  Menu,
   Plus,
   Setting,
   Upload,
@@ -43,6 +44,7 @@ const methods: HttpMethod[] = [
 ];
 
 const sidebarTab = ref<'collections' | 'history'>('collections');
+const mobileSidebarVisible = ref(false);
 const clientProtocol = ref<'http' | 'ws' | 'sse'>('http');
 const activeRequestTab = ref('params');
 const activeResponseTab = ref('body');
@@ -301,6 +303,7 @@ async function confirmCreateCollection() {
 function handleTreeNodeClick(node: CollectionTreeNode) {
   if (node.kind === 'request' && node.request) {
     store.openSavedRequest(node.request);
+    mobileSidebarVisible.value = false;
   }
 }
 
@@ -526,8 +529,15 @@ async function saveEnvVars() {
 
 <template>
   <el-container class="app-shell">
-    <el-header height="48px" class="top-bar">
-      <div style="display: flex; align-items: center; gap: 16px">
+    <el-header height="auto" class="top-bar">
+      <div class="top-left">
+        <el-button
+          class="mobile-menu-btn"
+          :icon="Menu"
+          circle
+          size="small"
+          @click="mobileSidebarVisible = true"
+        />
         <div class="brand">Api-Open</div>
         <el-radio-group v-model="clientProtocol" size="small">
           <el-radio-button value="http">HTTP</el-radio-button>
@@ -547,7 +557,7 @@ async function saveEnvVars() {
           <el-select
             v-model="ws.activeWorkspaceId"
             size="small"
-            style="width: 170px"
+            class="top-select"
             @change="(id: string) => ws.loadWorkspaceData(id)"
           >
             <el-option
@@ -563,7 +573,7 @@ async function saveEnvVars() {
             size="small"
             clearable
             placeholder="No Environment"
-            style="width: 170px"
+            class="top-select"
           >
             <el-option
               v-for="env in ws.environments"
@@ -603,7 +613,7 @@ async function saveEnvVars() {
     </el-header>
 
     <el-container class="main-body">
-      <el-aside width="280px" class="sidebar">
+      <el-aside width="280px" class="sidebar desktop-sidebar">
         <el-tabs v-model="sidebarTab" stretch>
           <el-tab-pane label="Collections" name="collections">
             <template v-if="ws.isAuthenticated">
@@ -778,26 +788,29 @@ async function saveEnvVars() {
         </el-tabs>
 
         <div class="request-bar">
-          <el-select v-model="tab.method" style="width: 120px">
+          <el-select v-model="tab.method" class="method-select">
             <el-option v-for="m in methods" :key="m" :label="m" :value="m" />
           </el-select>
           <el-input
             v-model="tab.url"
+            class="url-input"
             placeholder="Enter URL (supports {{variable}} syntax)"
             clearable
             @input="handleUrlInput"
             @keyup.ctrl.enter="store.sendActiveRequest"
             @keyup.enter="store.sendActiveRequest"
           />
-          <el-button
-            type="primary"
-            :loading="tab.loading"
-            @click="store.sendActiveRequest"
-          >
-            Send
-          </el-button>
-          <el-button @click="handleSaveClick">Save</el-button>
-          <el-button :icon="Plus" @click="store.addTab()">New</el-button>
+          <div class="request-bar-actions">
+            <el-button
+              type="primary"
+              :loading="tab.loading"
+              @click="store.sendActiveRequest"
+            >
+              Send
+            </el-button>
+            <el-button @click="handleSaveClick">Save</el-button>
+            <el-button :icon="Plus" @click="store.addTab()">New</el-button>
+          </div>
         </div>
 
         <el-tabs v-model="activeRequestTab" class="request-tabs">
@@ -1135,7 +1148,7 @@ async function saveEnvVars() {
     </el-container>
 
     <!-- Auth Dialog -->
-    <el-dialog v-model="authDialogVisible" title="Account" width="380px">
+    <el-dialog v-model="authDialogVisible" title="Account" width="min(92vw, 380px)">
       <el-tabs v-model="authMode" stretch>
         <el-tab-pane label="Sign In" name="login" />
         <el-tab-pane label="Register" name="register" />
@@ -1166,7 +1179,7 @@ async function saveEnvVars() {
     </el-dialog>
 
     <!-- Save Request Dialog -->
-    <el-dialog v-model="saveDialogVisible" title="Save Request" width="400px">
+    <el-dialog v-model="saveDialogVisible" title="Save Request" width="min(92vw, 400px)">
       <el-form label-position="top">
         <el-form-item label="Request Name">
           <el-input v-model="saveRequestName" />
@@ -1189,7 +1202,7 @@ async function saveEnvVars() {
     </el-dialog>
 
     <!-- New Collection Dialog -->
-    <el-dialog v-model="newCollectionVisible" title="New Collection" width="360px">
+    <el-dialog v-model="newCollectionVisible" title="New Collection" width="min(92vw, 360px)">
       <el-input v-model="newCollectionName" placeholder="Collection name" />
       <template #footer>
         <el-button @click="newCollectionVisible = false">Cancel</el-button>
@@ -1198,7 +1211,7 @@ async function saveEnvVars() {
     </el-dialog>
 
     <!-- Environments Dialog -->
-    <el-dialog v-model="envDialogVisible" title="Manage Environments" width="680px">
+    <el-dialog v-model="envDialogVisible" title="Manage Environments" width="min(94vw, 680px)">
       <div class="env-create-row">
         <el-input
           v-model="newEnvName"
@@ -1276,7 +1289,7 @@ async function saveEnvVars() {
     </el-dialog>
 
     <!-- Import cURL Dialog -->
-    <el-dialog v-model="curlDialogVisible" title="Import cURL" width="560px">
+    <el-dialog v-model="curlDialogVisible" title="Import cURL" width="min(94vw, 560px)">
       <el-input
         v-model="curlInput"
         type="textarea"
@@ -1291,7 +1304,7 @@ async function saveEnvVars() {
     </el-dialog>
 
     <!-- Code Snippet Dialog -->
-    <el-dialog v-model="snippetDialogVisible" title="Generate Code Snippet" width="620px">
+    <el-dialog v-model="snippetDialogVisible" title="Generate Code Snippet" width="min(94vw, 620px)">
       <div class="body-controls">
         <el-select v-model="snippetLang" size="small" style="width: 200px">
           <el-option label="cURL" value="curl" />
@@ -1313,7 +1326,7 @@ async function saveEnvVars() {
     />
 
     <!-- API Documentation Modal -->
-    <el-dialog v-model="docsVisible" :title="`API Docs: ${docsTitle}`" width="680px">
+    <el-dialog v-model="docsVisible" :title="`API Docs: ${docsTitle}`" width="min(94vw, 680px)">
       <div class="body-controls">
         <el-button size="small" type="primary" @click="downloadDocsMarkdown">
           Download .md
@@ -1323,7 +1336,7 @@ async function saveEnvVars() {
     </el-dialog>
 
     <!-- Team Workspace & Invite Modal -->
-    <el-dialog v-model="teamDialogVisible" title="Team Workspaces & Members" width="620px">
+    <el-dialog v-model="teamDialogVisible" title="Team Workspaces & Members" width="min(94vw, 620px)">
       <div class="env-create-row">
         <el-input
           v-model="newTeamName"
@@ -1378,7 +1391,7 @@ async function saveEnvVars() {
     </el-dialog>
 
     <!-- GraphQL Schema Introspection Modal -->
-    <el-dialog v-model="gqlSchemaVisible" title="GraphQL Schema" width="680px">
+    <el-dialog v-model="gqlSchemaVisible" title="GraphQL Schema" width="min(94vw, 680px)">
       <el-tabs>
         <el-tab-pane :label="`Queries (${gqlQueries.length})`">
           <el-table :data="gqlQueries" size="small" border max-height="360">
@@ -1396,8 +1409,68 @@ async function saveEnvVars() {
         </el-tab-pane>
       </el-tabs>
     </el-dialog>
+    <!-- Mobile Sidebar Drawer -->
+    <el-drawer
+      v-model="mobileSidebarVisible"
+      title="Workspace"
+      direction="ltr"
+      size="290px"
+    >
+      <el-tabs v-model="sidebarTab" stretch>
+        <el-tab-pane label="Collections" name="collections">
+          <template v-if="ws.isAuthenticated">
+            <div class="sidebar-toolbar">
+              <el-text size="small" type="info">Collections</el-text>
+              <div style="display: flex; gap: 4px; align-items: center">
+                <el-button size="small" :icon="Upload" link type="primary" @click="triggerPostmanImport">
+                  Postman
+                </el-button>
+                <el-button size="small" :icon="Plus" link type="primary" @click="newCollectionVisible = true">
+                  New
+                </el-button>
+              </div>
+            </div>
+            <el-tree
+              v-if="ws.collectionTree.length"
+              :data="ws.collectionTree"
+              node-key="id"
+              default-expand-all
+              @node-click="handleTreeNodeClick"
+            />
+            <el-empty v-else description="No collections yet" :image-size="54" />
+          </template>
+          <el-empty v-else description="Sign in to sync collections" :image-size="54">
+            <el-button type="primary" size="small" @click="authDialogVisible = true; mobileSidebarVisible = false">
+              Sign In
+            </el-button>
+          </el-empty>
+        </el-tab-pane>
+        <el-tab-pane label="History" name="history">
+          <div v-if="store.history.length" class="history-list">
+            <div
+              v-for="item in store.history"
+              :key="item.id"
+              class="history-item"
+              @click="store.addTab({ method: item.method, url: item.url, name: item.url }); mobileSidebarVisible = false"
+            >
+              <el-tag size="small" effect="plain">{{ item.method }}</el-tag>
+              <span class="history-url">{{ item.url }}</span>
+            </div>
+          </div>
+          <el-empty v-else description="No history yet" :image-size="54" />
+        </el-tab-pane>
+      </el-tabs>
+    </el-drawer>
   </el-container>
 </template>
+
+<style>
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+</style>
 
 <style scoped>
 .app-shell {
@@ -1408,8 +1481,19 @@ async function saveEnvVars() {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   border-bottom: 1px solid #e4e7ed;
-  padding: 0 16px;
+  padding: 8px 16px;
+  min-height: 48px;
+}
+.top-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.mobile-menu-btn {
+  display: none;
 }
 .brand {
   font-weight: 700;
@@ -1418,7 +1502,11 @@ async function saveEnvVars() {
 .top-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+}
+.top-select {
+  width: 160px;
 }
 .main-body {
   overflow: hidden;
@@ -1494,9 +1582,24 @@ async function saveEnvVars() {
 .request-bar {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+.method-select {
+  width: 120px;
+  flex-shrink: 0;
+}
+.url-input {
+  flex: 1;
+  min-width: 180px;
+}
+.request-bar-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 .body-controls {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   margin-bottom: 8px;
@@ -1582,9 +1685,53 @@ async function saveEnvVars() {
 .binary-box {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 12px;
   border: 1px dashed #dcdfe6;
   border-radius: 6px;
+}
+
+@media (max-width: 900px) {
+  .desktop-sidebar {
+    display: none;
+  }
+  .mobile-menu-btn {
+    display: inline-flex;
+  }
+  .top-select {
+    width: 130px;
+  }
+}
+
+@media (max-width: 640px) {
+  .top-bar {
+    padding: 8px 12px;
+  }
+  .workspace {
+    padding: 10px 12px;
+  }
+  .request-bar {
+    flex-wrap: wrap;
+  }
+  .method-select {
+    width: 105px;
+  }
+  .request-bar-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .gql-grid {
+    grid-template-columns: 1fr;
+  }
+  .response-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .env-create-row,
+  .env-select-row,
+  .env-actions {
+    flex-wrap: wrap;
+  }
 }
 </style>
