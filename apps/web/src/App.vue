@@ -1050,19 +1050,28 @@ async function saveEnvVars() {
           </el-tab-pane>
         </el-tabs>
 
-        <div class="response-section">
+        <div class="response-section kt-card kt-card-bordered">
           <div class="response-header">
             <span>Response</span>
             <div v-if="tab.response" class="response-meta">
-              <el-tag :type="statusTagType(tab.response.statusCode)" size="small">
+              <span
+                class="kt-badge kt-badge-sm"
+                :class="
+                  tab.response.statusCode < 300
+                    ? 'kt-badge-success'
+                    : tab.response.statusCode < 500
+                      ? 'kt-badge-warning'
+                      : 'kt-badge-danger'
+                "
+              >
                 {{ tab.response.statusCode }} {{ tab.response.statusText }}
-              </el-tag>
-              <el-tag type="info" size="small" effect="plain">
+              </span>
+              <span class="kt-badge kt-badge-sm kt-badge-outline kt-badge-secondary">
                 {{ tab.response.durationMs }} ms
-              </el-tag>
-              <el-tag type="info" size="small" effect="plain">
+              </span>
+              <span class="kt-badge kt-badge-sm kt-badge-outline kt-badge-secondary">
                 {{ formatBytes(tab.response.sizeBytes) }}
-              </el-tag>
+              </span>
             </div>
           </div>
 
@@ -1646,8 +1655,7 @@ body {
 }
 .response-section {
   margin-top: 8px;
-  border-top: 1px solid #e4e7ed;
-  padding-top: 12px;
+  padding: 12px 14px;
   flex: 1;
   display: flex;
   flex-direction: column;
