@@ -2,6 +2,9 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { EnvVariable, FormDataItem, HttpMethod } from '@api-open/shared';
 import {
+  Clock,
+  Collection,
+  CopyDocument,
   Delete,
   Document,
   Download,
@@ -14,9 +17,9 @@ import {
   Plus,
   Search,
   Setting,
+  Share,
   Sunny,
   Upload,
-  User,
   VideoPlay,
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
@@ -133,19 +136,67 @@ const searchDialogVisible = ref(false);
 const searchQuery = ref('');
 const searchInputRef = ref<{ focus?: () => void } | null>(null);
 const shortcutsDialogVisible = ref(false);
+const shortcutSearch = ref('');
 
-const shortcutsList = [
-  { keys: 'Ctrl / Cmd + K', desc: 'Search API (Collections & History)' },
-  { keys: 'Ctrl / Cmd + Enter', desc: 'Send active request' },
-  { keys: 'Ctrl / Cmd + S', desc: 'Save active request' },
-  { keys: 'Ctrl / Cmd + L', desc: 'Focus URL bar' },
-  { keys: 'Alt + T / Ctrl+Alt+N', desc: 'Open new request tab' },
-  { keys: 'Alt + W', desc: 'Close active request tab' },
-  { keys: 'Ctrl / Cmd + B', desc: 'Toggle sidebar' },
-  { keys: 'Ctrl / Cmd + I', desc: 'Import cURL' },
-  { keys: 'Ctrl / Cmd + ,', desc: 'Open Settings & Profile' },
-  { keys: 'Ctrl / Cmd + /', desc: 'Show keyboard shortcuts' },
+const shortcutGroups = [
+  {
+    title: 'General',
+    items: [
+      { keys: '?', desc: 'Help / Shortcuts' },
+      { keys: 'Ctrl + K', desc: 'Search API & Commands' },
+      { keys: 'Ctrl + /', desc: 'Keyboard Shortcuts' },
+      { keys: 'Ctrl + D', desc: 'Close Active Tab' },
+      { keys: 'Ctrl + B', desc: 'Hide / Show Sidebar' },
+    ],
+  },
+  {
+    title: 'Request',
+    items: [
+      { keys: 'Ctrl + Enter', desc: 'Send Request' },
+      { keys: 'Ctrl + S', desc: 'Save to Collections' },
+      { keys: 'Ctrl + U', desc: 'Share Request (Copy JSON)' },
+      { keys: 'Ctrl + L', desc: 'Focus URL Bar' },
+      { keys: 'Alt + ↑ / ↓', desc: 'Next / Previous HTTP Method' },
+      { keys: 'Alt + G', desc: 'Select GET Method' },
+      { keys: 'Alt + H', desc: 'Select HEAD Method' },
+      { keys: 'Alt + P', desc: 'Select POST Method' },
+      { keys: 'Alt + U', desc: 'Select PUT Method' },
+      { keys: 'Alt + X', desc: 'Select DELETE Method' },
+    ],
+  },
+  {
+    title: 'Response',
+    items: [
+      { keys: 'Ctrl + J', desc: 'Download Response as File' },
+      { keys: 'Ctrl + .', desc: 'Copy Response to Clipboard' },
+    ],
+  },
+  {
+    title: 'Navigation & Team',
+    items: [
+      { keys: 'Alt + R', desc: 'Switch to HTTP / REST' },
+      { keys: 'Alt + W', desc: 'Switch to WebSocket' },
+      { keys: 'Alt + S', desc: 'Open Settings' },
+      { keys: 'Alt + M', desc: 'Open Profile' },
+      { keys: 'Ctrl + M', desc: 'Invite Team Member' },
+    ],
+  },
 ];
+
+const filteredShortcutGroups = computed(() => {
+  const q = shortcutSearch.value.trim().toLowerCase();
+  if (!q) return shortcutGroups;
+  return shortcutGroups
+    .map((g) => ({
+      title: g.title,
+      items: g.items.filter(
+        (i) =>
+          i.desc.toLowerCase().includes(q) ||
+          i.keys.toLowerCase().includes(q),
+      ),
+    }))
+    .filter((g) => g.items.length > 0);
+});
 
 const searchableRequests = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
@@ -209,9 +260,66 @@ function selectSearchItem(item: (typeof searchableRequests.value)[number]) {
   searchDialogVisible.value = false;
 }
 
+function cycleMethod(dir: 1 | -1) {
+  if (!tab.value) return;
+  const idx = methods.indexOf(tab.value.method);
+  const nextIdx = (idx + dir + methods.length) % methods.length;
+  tab.value.method = methods[nextIdx];
+}
+
+async function copyActiveResponse() {
+  const res = tab.value?.response;
+  if (!res) return;
+  await navigator.clipboard.writeText(res.body);
+  ElMessage.success('Response copied to clipboard');
+}
+
+function downloadActiveResponse() {
+  const res = tab.value?.response;
+  if (!res) return;
+  const blob = new Blob([res.body], {
+    type: res.headers['content-type'] || 'text/plain',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `response-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function shareActiveRequest() {
+  if (!tab.value) return;
+  const payload = JSON.stringify(
+    {
+      name: tab.value.name,
+      method: tab.value.method,
+      url: tab.value.url,
+      headers: tab.value.headers,
+      queryParams: tab.value.queryParams,
+      body: tab.value.body,
+    },
+    null,
+    2,
+  );
+  await navigator.clipboard.writeText(payload);
+  ElMessage.success('Request JSON copied to clipboard for sharing');
+}
+
 function handleGlobalKeydown(e: KeyboardEvent) {
   const mod = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
+  const targetTag = (e.target as HTMLElement | null)?.tagName;
+  const isTyping =
+    targetTag === 'INPUT' ||
+    targetTag === 'TEXTAREA' ||
+    (e.target as HTMLElement | null)?.isContentEditable;
+
+  if (!mod && !e.altKey && e.key === '?' && !isTyping) {
+    e.preventDefault();
+    shortcutsDialogVisible.value = true;
+    return;
+  }
 
   if (mod && key === 'k') {
     e.preventDefault();
@@ -230,19 +338,40 @@ function handleGlobalKeydown(e: KeyboardEvent) {
     handleSaveClick();
     return;
   }
+  if (mod && key === 'u') {
+    e.preventDefault();
+    shareActiveRequest();
+    return;
+  }
+  if (mod && key === 'j') {
+    e.preventDefault();
+    downloadActiveResponse();
+    return;
+  }
+  if (mod && e.key === '.') {
+    e.preventDefault();
+    copyActiveResponse();
+    return;
+  }
   if (mod && key === 'l') {
     e.preventDefault();
     urlInputRef.value?.focus?.();
     return;
   }
+  if (mod && key === 'd') {
+    e.preventDefault();
+    if (tab.value) store.closeTab(tab.value.id);
+    return;
+  }
+  if (mod && key === 'm') {
+    e.preventDefault();
+    if (ws.isAuthenticated) teamDialogVisible.value = true;
+    else authDialogVisible.value = true;
+    return;
+  }
   if ((e.altKey && key === 't') || (mod && e.altKey && key === 'n')) {
     e.preventDefault();
     store.addTab();
-    return;
-  }
-  if (e.altKey && key === 'w') {
-    e.preventDefault();
-    if (tab.value) store.closeTab(tab.value.id);
     return;
   }
   if (mod && key === 'b') {
@@ -260,9 +389,48 @@ function handleGlobalKeydown(e: KeyboardEvent) {
     openSettings('layout');
     return;
   }
-  if (mod && key === '/') {
+  if (mod && e.key === '/') {
     e.preventDefault();
     shortcutsDialogVisible.value = true;
+    return;
+  }
+
+  // Hoppscotch Alt+Method & Alt+Navigation shortcuts
+  if (e.altKey && !mod) {
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      cycleMethod(-1);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      cycleMethod(1);
+    } else if (key === 'g' && tab.value) {
+      e.preventDefault();
+      tab.value.method = 'GET';
+    } else if (key === 'h' && tab.value) {
+      e.preventDefault();
+      tab.value.method = 'HEAD';
+    } else if (key === 'p' && tab.value) {
+      e.preventDefault();
+      tab.value.method = 'POST';
+    } else if (key === 'u' && tab.value) {
+      e.preventDefault();
+      tab.value.method = 'PUT';
+    } else if (key === 'x' && tab.value) {
+      e.preventDefault();
+      tab.value.method = 'DELETE';
+    } else if (key === 'r') {
+      e.preventDefault();
+      clientProtocol.value = 'http';
+    } else if (key === 'w') {
+      e.preventDefault();
+      clientProtocol.value = 'ws';
+    } else if (key === 's') {
+      e.preventDefault();
+      openSettings('layout');
+    } else if (key === 'm') {
+      e.preventDefault();
+      openSettings('profile');
+    }
   }
 }
 
@@ -1620,6 +1788,20 @@ async function saveEnvVars() {
               <span class="kt-badge kt-badge-sm kt-badge-outline kt-badge-secondary">
                 {{ formatBytes(tab.response.sizeBytes) }}
               </span>
+              <el-button
+                size="small"
+                circle
+                :icon="CopyDocument"
+                title="Copy Response (Ctrl+.)"
+                @click="copyActiveResponse"
+              />
+              <el-button
+                size="small"
+                circle
+                :icon="Download"
+                title="Download Response (Ctrl+J)"
+                @click="downloadActiveResponse"
+              />
             </div>
             <div v-else-if="tab.error" class="response-meta">
               <span class="status-badge status-5xx">Error</span>
@@ -1713,6 +1895,52 @@ async function saveEnvVars() {
         </div>
         </template>
       </el-main>
+
+      <!-- Hoppscotch-style Quick Action Icon Rail -->
+      <aside class="quick-rail desktop-sidebar">
+        <button
+          type="button"
+          class="rail-btn"
+          :class="{ active: !settings.sidebarHidden && sidebarTab === 'collections' }"
+          title="Collections"
+          @click="settings.sidebarHidden = false; sidebarTab = 'collections'"
+        >
+          <el-icon><Folder /></el-icon>
+        </button>
+        <button
+          type="button"
+          class="rail-btn"
+          title="Environments"
+          @click="openEnvDialog"
+        >
+          <el-icon><Collection /></el-icon>
+        </button>
+        <button
+          type="button"
+          class="rail-btn"
+          :class="{ active: !settings.sidebarHidden && sidebarTab === 'history' }"
+          title="History"
+          @click="settings.sidebarHidden = false; sidebarTab = 'history'"
+        >
+          <el-icon><Clock /></el-icon>
+        </button>
+        <button
+          type="button"
+          class="rail-btn"
+          title="Share Request (Ctrl+U)"
+          @click="shareActiveRequest"
+        >
+          <el-icon><Share /></el-icon>
+        </button>
+        <button
+          type="button"
+          class="rail-btn"
+          title="Code Snippet"
+          @click="snippetDialogVisible = true"
+        >
+          <span style="font-size: 11px; font-weight: 700">&lt;/&gt;</span>
+        </button>
+      </aside>
     </el-container>
     </div>
 
@@ -2151,21 +2379,39 @@ async function saveEnvVars() {
       </div>
     </el-dialog>
 
-    <!-- Keyboard Shortcuts Cheat Sheet -->
-    <el-dialog
+    <!-- Keyboard Shortcuts Drawer (Hoppscotch Style) -->
+    <el-drawer
       v-model="shortcutsDialogVisible"
       title="Keyboard Shortcuts"
-      width="min(94vw, 480px)"
+      direction="rtl"
+      size="min(92vw, 360px)"
     >
-      <el-table :data="shortcutsList" size="small" border>
-        <el-table-column label="Shortcut" width="185">
-          <template #default="{ row }">
-            <kbd class="kbd-key">{{ row.keys }}</kbd>
-          </template>
-        </el-table-column>
-        <el-table-column prop="desc" label="Action" />
-      </el-table>
-    </el-dialog>
+      <el-input
+        v-model="shortcutSearch"
+        :prefix-icon="Search"
+        size="small"
+        placeholder="Search shortcuts..."
+        clearable
+        style="margin-bottom: 14px"
+      />
+      <div class="shortcuts-groups">
+        <div
+          v-for="group in filteredShortcutGroups"
+          :key="group.title"
+          class="shortcut-group"
+        >
+          <div class="shortcut-group-title">{{ group.title }}</div>
+          <div
+            v-for="item in group.items"
+            :key="item.keys"
+            class="shortcut-row"
+          >
+            <span class="shortcut-desc">{{ item.desc }}</span>
+            <kbd class="kbd-key">{{ item.keys }}</kbd>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
   </el-container>
 </template>
 
@@ -2634,11 +2880,59 @@ async function saveEnvVars() {
 }
 .kbd-key {
   font-family: Consolas, Monaco, monospace;
-  font-size: 12px;
+  font-size: 11.5px;
   padding: 2px 6px;
   border-radius: 4px;
   border: 1px solid var(--ao-border);
   background: var(--ao-surface-elevated);
+}
+.quick-rail {
+  width: 40px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 4px;
+  background: var(--ao-surface);
+  border-left: 1px solid var(--ao-border);
+}
+.rail-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ao-text-muted);
+  cursor: pointer;
+}
+.rail-btn:hover,
+.rail-btn.active {
+  color: var(--ao-accent);
+  background: var(--ao-hover);
+}
+.shortcuts-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.shortcut-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ao-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 8px;
+}
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+  font-size: 13px;
 }
 
 @media (max-width: 900px) {
