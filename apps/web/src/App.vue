@@ -538,7 +538,10 @@ async function saveEnvVars() {
           size="small"
           @click="mobileSidebarVisible = true"
         />
-        <div class="brand">Api-Open</div>
+        <div class="brand">
+          <img src="/API-OPEN-LOGO.png" alt="Api-Open" class="brand-logo" />
+          <span>API-OPEN</span>
+        </div>
         <el-radio-group v-model="clientProtocol" size="small">
           <el-radio-button value="http">HTTP</el-radio-button>
           <el-radio-button value="ws">WebSocket</el-radio-button>
@@ -1089,7 +1092,11 @@ async function saveEnvVars() {
                 />
                 <pre v-else class="response-pre">{{ formattedBody }}</pre>
               </template>
-              <el-empty v-else description="Hit Send to get a response" :image-size="60" />
+              <el-empty v-else description="Hit Send to get a response" :image-size="60">
+                <template #image>
+                  <img src="/API-OPEN-LOGO.png" alt="Api-Open" style="width: 56px; opacity: 0.75" />
+                </template>
+              </el-empty>
             </el-tab-pane>
 
             <el-tab-pane :label="`Headers (${responseHeadersList.length})`" name="headers">
@@ -1149,6 +1156,9 @@ async function saveEnvVars() {
 
     <!-- Auth Dialog -->
     <el-dialog v-model="authDialogVisible" title="Account" width="min(92vw, 380px)">
+      <div class="auth-banner">
+        <img src="/API-OPEN-FULL-WARNA.jpg" alt="Api-Open" class="auth-banner-img" />
+      </div>
       <el-tabs v-model="authMode" stretch>
         <el-tab-pane label="Sign In" name="login" />
         <el-tab-pane label="Register" name="register" />
@@ -1496,8 +1506,29 @@ body {
   display: none;
 }
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 700;
   font-size: 16px;
+  letter-spacing: 0.3px;
+}
+.brand-logo {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+.auth-banner {
+  background: #1b2434;
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: center;
+}
+.auth-banner-img {
+  height: 44px;
+  object-fit: contain;
 }
 .top-actions {
   display: flex;
