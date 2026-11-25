@@ -820,7 +820,11 @@ async function saveEnvVars() {
         />
         <div class="brand">
           <img
-            src="/API-OPEN-FULL.png"
+            :src="
+              settings.theme === 'dark'
+                ? '/API-OPEN-FULL.png'
+                : '/API-OPEN-FULL-HITAM.png'
+            "
             alt="Api-Open"
             class="brand-full-logo"
           />
