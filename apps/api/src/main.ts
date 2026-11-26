@@ -21,8 +21,35 @@ async function initApp(): Promise<void> {
       }),
     );
 
+    const envOrigins = (process.env.CORS_ORIGIN ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const allowedOrigins = new Set([
+      'https://api-open.vercel.app',
+      'http://localhost:9999',
+      'http://localhost:5173',
+      ...envOrigins,
+    ]);
+
     app.enableCors({
-      origin: process.env.CORS_ORIGIN?.split(',') ?? ['http://localhost:9999'],
+      origin: (
+        origin: string | undefined,
+        callback: (err: Error | null, allow?: boolean) => void,
+      ) => {
+        if (
+          !origin ||
+          allowedOrigins.has('*') ||
+          allowedOrigins.has(origin) ||
+          /^https:\/\/api-open-[a-z0-9-]+\.vercel\.app$/i.test(origin)
+        ) {
+          callback(null, true);
+        } else {
+          callback(null, false);
+        }
+      },
+      methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
       credentials: true,
     });
 
