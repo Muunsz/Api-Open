@@ -11,6 +11,7 @@
     "dev:api": "npm run start:dev --workspace=@api-open/api",
     "build": "npm run build --workspace=@api-open/shared && npm run build --workspace=@api-open/api && npm run build --workspace=@api-open/web",
     "build:web": "npm run build --workspace=@api-open/web",
-    "build:api": "npm run build --workspace=@api-open/api"
+    "build:api": "npm run build --workspace=@api-open/api",
+    "test": "node --experimental-strip-types --test tests/core.test.ts"
   }
 }

@@ -14,6 +14,17 @@ function renderNodeMarkdown(node: CollectionTreeNode, depth = 1): string {
       lines.push(`**URL:** \`${req.url}\``);
       lines.push('');
 
+      const activePathParams = (req.pathParams ?? []).filter((p) => p.enabled && p.key);
+      if (activePathParams.length) {
+        lines.push('**Path Variables:**');
+        lines.push('| Key | Value | Description |');
+        lines.push('| --- | --- | --- |');
+        for (const p of activePathParams) {
+          lines.push(`| \`${p.key}\` | \`${p.value}\` | ${p.description ?? ''} |`);
+        }
+        lines.push('');
+      }
+
       const activeParams = (req.queryParams ?? []).filter((q) => q.enabled && q.key);
       if (activeParams.length) {
         lines.push('**Query Parameters:**');
@@ -41,6 +52,19 @@ function renderNodeMarkdown(node: CollectionTreeNode, depth = 1): string {
         lines.push('```' + (req.body.rawType || 'json'));
         lines.push(req.body.raw);
         lines.push('```');
+        lines.push('');
+      }
+
+      if (req.examples?.length) {
+        lines.push('**Response Examples:**');
+        for (const ex of req.examples) {
+          lines.push(`- **${ex.name}** (\`${ex.statusCode} ${ex.statusText}\`)`);
+          if (ex.body) {
+            lines.push('```json');
+            lines.push(ex.body);
+            lines.push('```');
+          }
+        }
         lines.push('');
       }
     }

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
+import type { ClientCertConfig } from '@api-open/shared';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type NavbarPosition = 'top' | 'bottom';
@@ -70,6 +71,44 @@ export const useSettingsStore = defineStore('settings', () => {
   const sidebarHeight = ref<number>(initial.sidebarHeight);
   const responsePosition = ref<PanelPosition>(initial.responsePosition);
   const responseSizePercent = ref<number>(initial.responseSizePercent);
+
+  const CERTS_KEY = 'api_open_client_certs_v1';
+  const clientCerts = ref<ClientCertConfig[]>((() => {
+    try {
+      const raw = localStorage.getItem(CERTS_KEY);
+      return raw ? (JSON.parse(raw) as ClientCertConfig[]) : [];
+    } catch {
+      return [];
+    }
+  })());
+
+  const PROXY_KEY = 'api_open_custom_proxy_v1';
+  const customProxyUrl = ref<string>(localStorage.getItem(PROXY_KEY) ?? '');
+  const savedProxyUrls = ref<string[]>([
+    'http://localhost:3001/api',
+    'https://api-proxy.internal/api',
+  ]);
+
+  watch(customProxyUrl, (val) => {
+    try {
+      if (val.trim()) localStorage.setItem(PROXY_KEY, val.trim());
+      else localStorage.removeItem(PROXY_KEY);
+    } catch {
+      // ignore
+    }
+  });
+
+  watch(
+    clientCerts,
+    (val) => {
+      try {
+        localStorage.setItem(CERTS_KEY, JSON.stringify(val));
+      } catch {
+        // ignore
+      }
+    },
+    { deep: true },
+  );
 
   const mediaQuery =
     typeof window !== 'undefined' && window.matchMedia
@@ -148,6 +187,71 @@ export const useSettingsStore = defineStore('settings', () => {
     },
   );
 
+  const LOCALE_KEY = 'api_open_locale_v1';
+  const locale = ref<'en' | 'id'>(
+    localStorage.getItem(LOCALE_KEY) === 'id' ? 'id' : 'en',
+  );
+  const activeThemePlugin = ref<string>(
+    localStorage.getItem('api_open_theme_plugin_v1') || 'default',
+  );
+  watch(locale, (v) => {
+    try { localStorage.setItem(LOCALE_KEY, v); } catch { /* ignore */ }
+  });
+  watch(activeThemePlugin, (v) => {
+    try { localStorage.setItem('api_open_theme_plugin_v1', v); } catch { /* ignore */ }
+  });
+
+  const TUNNEL_KEY = 'api_open_tunnel_proxy_v1';
+  const tunnelProxy = ref<{ url: string; username: string; password: string }>((() => {
+    try {
+      const raw = localStorage.getItem(TUNNEL_KEY);
+      return raw ? JSON.parse(raw) : { url: '', username: '', password: '' };
+    } catch {
+      return { url: '', username: '', password: '' };
+    }
+  })());
+
+  watch(
+    tunnelProxy,
+    (val) => {
+      try {
+        localStorage.setItem(TUNNEL_KEY, JSON.stringify(val));
+      } catch {
+        // ignore
+      }
+    },
+    { deep: true },
+  );
+
+  const AI_KEY = 'api_open_ai_config_v1';
+  const aiConfig = ref<{
+    provider: 'local' | 'gemini' | 'groq' | 'openrouter' | 'ollama';
+    apiKey: string;
+    model: string;
+    ollamaUrl: string;
+  }>((() => {
+    try {
+      const raw = localStorage.getItem(AI_KEY);
+      return raw
+        ? JSON.parse(raw)
+        : { provider: 'local', apiKey: '', model: '', ollamaUrl: 'http://localhost:11434' };
+    } catch {
+      return { provider: 'local', apiKey: '', model: '', ollamaUrl: 'http://localhost:11434' };
+    }
+  })());
+
+  watch(
+    aiConfig,
+    (val) => {
+      try {
+        localStorage.setItem(AI_KEY, JSON.stringify(val));
+      } catch {
+        // ignore
+      }
+    },
+    { deep: true },
+  );
+
   function toggleTheme() {
     theme.value = effectiveTheme.value === 'light' ? 'dark' : 'light';
   }
@@ -179,6 +283,13 @@ export const useSettingsStore = defineStore('settings', () => {
     sidebarHeight,
     responsePosition,
     responseSizePercent,
+    clientCerts,
+    customProxyUrl,
+    savedProxyUrls,
+    tunnelProxy,
+    aiConfig,
+    locale,
+    activeThemePlugin,
     toggleTheme,
     resetDefaults,
   };

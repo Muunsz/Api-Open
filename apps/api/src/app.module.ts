@@ -3,7 +3,10 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { CollectionModule } from './modules/collection/collection.module';
 import { EnvironmentModule } from './modules/environment/environment.module';
+import { HistoryModule } from './modules/history/history.module';
 import { MailModule } from './modules/mail/mail.module';
+import { MockModule } from './modules/mock/mock.module';
+import { MonitorModule } from './modules/monitor/monitor.module';
 import { ProxyModule } from './modules/proxy/proxy.module';
 import { RequestModule } from './modules/request/request.module';
 import { WorkspaceModule } from './modules/workspace/workspace.module';
@@ -19,6 +22,9 @@ import { PrismaModule } from './prisma/prisma.module';
     RequestModule,
     EnvironmentModule,
     ProxyModule,
+    MockModule,
+    HistoryModule,
+    MonitorModule,
   ],
   controllers: [AppController],
 })

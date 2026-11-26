@@ -1,0 +1,132 @@
+/* ==========================================================================
+   Api-Open — Shared Modals & Drawers Styles
+   ========================================================================== */
+
+.modal-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.code-area textarea {
+  font-family: Consolas, Monaco, 'Courier New', monospace;
+  font-size: 13px;
+}
+
+.modal-code-pre {
+  background: var(--ao-code-bg);
+  border: 1px solid var(--ao-border);
+  color: var(--ao-text);
+  border-radius: 6px;
+  padding: 12px;
+  max-height: 400px;
+  font-family: Consolas, Monaco, 'Courier New', monospace;
+  font-size: 12.5px;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.sidebar-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--ao-border);
+  background: var(--ao-surface-elevated);
+  transition: background 0.15s;
+}
+
+.history-item:hover {
+  background: var(--ao-hover);
+}
+
+.history-url {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-results-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.kbd-key {
+  font-family: Consolas, Monaco, monospace;
+  font-size: 11.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--ao-border);
+  background: var(--ao-surface-elevated);
+}
+
+.shortcuts-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.shortcut-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ao-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 8px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.download-app-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.download-app-card {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--ao-border);
+  background: var(--ao-surface-2);
+}
+
+.download-app-card-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.download-app-card-desc {
+  font-size: 12px;
+  color: var(--ao-text-muted);
+  margin-bottom: 10px;
+}

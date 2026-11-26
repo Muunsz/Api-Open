@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MailerModule } from '@nestjs-modules/mailer';
+import { MailController } from './mail.controller';
 import { MailService } from './mail.service';
 
 @Global()
@@ -29,6 +30,7 @@ import { MailService } from './mail.service';
       },
     }),
   ],
+  controllers: [MailController],
   providers: [MailService],
   exports: [MailService],
 })

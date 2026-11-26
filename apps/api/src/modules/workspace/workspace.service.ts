@@ -43,6 +43,45 @@ export class WorkspaceService {
     return { ...workspace, role: WorkspaceRole.OWNER };
   }
 
+  async updateWorkspace(
+    workspaceId: string,
+    userId: string,
+    data: { name?: string; summary?: string; readme?: string },
+  ) {
+    const membership = await this.assertAccess(workspaceId, userId, [
+      'OWNER',
+      'EDITOR',
+    ]);
+    const nextName = data.name?.trim();
+    if (data.name !== undefined && !nextName) {
+      throw new BadRequestException('Workspace name cannot be empty');
+    }
+
+    const updateData: { name?: string; summary?: string; readme?: string } = {};
+    if (nextName !== undefined) updateData.name = nextName;
+    if (data.summary !== undefined) updateData.summary = data.summary;
+    if (data.readme !== undefined) updateData.readme = data.readme;
+
+    const updated =
+      Object.keys(updateData).length > 0
+        ? await this.prisma.workspace.update({
+            where: { id: workspaceId },
+            data: updateData,
+          })
+        : await this.prisma.workspace.findUnique({
+            where: { id: workspaceId },
+          });
+
+    if (!updated) {
+      throw new BadRequestException('Workspace not found');
+    }
+
+    return {
+      ...updated,
+      role: membership.role,
+    };
+  }
+
   async listMembers(workspaceId: string, userId: string) {
     await this.assertAccess(workspaceId, userId);
     return this.prisma.workspaceMember.findMany({
@@ -81,11 +120,35 @@ export class WorkspaceService {
       });
     }
 
+    const inviter = await this.prisma.user.findUnique({
+      where: { id: inviterId },
+      select: { name: true, email: true },
+    });
+    const inviterLabel = inviter?.name || inviter?.email || 'A teammate';
+    const appUrl =
+      process.env.CORS_ORIGIN?.split(',')[0]?.trim() || 'http://localhost:9999';
+
     const mailResult = await this.mailService.sendEmail({
       to: email.trim(),
       subject: `Invitation to join "${workspace.name}" on Api-Open`,
-      text: `You have been invited as ${role} to workspace "${workspace.name}" on Api-Open.`,
-      html: `<p>You have been invited as <b>${role}</b> to workspace <b>${workspace.name}</b> on Api-Open.</p>`,
+      userId: inviterId,
+      workspaceId,
+      category: 'invite',
+      text: `${inviterLabel} invited you as ${role} to workspace "${workspace.name}" on Api-Open. Open ${appUrl} and sign in with ${email.trim()} to access it.`,
+      html: `
+        <div style="font-family: sans-serif; line-height: 1.6; max-width: 520px; margin: 0 auto;">
+          <h2 style="margin-bottom: 8px;">Workspace Invitation</h2>
+          <p><b>${inviterLabel}</b> invited you as <b>${role}</b> to collaborate in workspace <b>${workspace.name}</b> on <b>Api-Open</b>.</p>
+          <p style="margin: 20px 0;">
+            <a href="${appUrl}" style="display: inline-block; padding: 10px 18px; background: #409eff; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600;">
+              Open Api-Open Workspace
+            </a>
+          </p>
+          <p style="font-size: 13px; color: #666;">
+            Sign in or verify your email using <b>${email.trim()}</b> to access the shared workspace.
+          </p>
+        </div>
+      `,
     });
 
     return {
@@ -94,6 +157,31 @@ export class WorkspaceService {
       email: email.trim(),
       role,
     };
+  }
+
+  async updateMemberRole(
+    workspaceId: string,
+    actorId: string,
+    memberId: string,
+    role: WorkspaceRole,
+  ) {
+    await this.assertAccess(workspaceId, actorId, ['OWNER']);
+    const member = await this.prisma.workspaceMember.findUnique({
+      where: { id: memberId },
+    });
+    if (!member || member.workspaceId !== workspaceId) {
+      throw new BadRequestException('Member not found');
+    }
+    if (member.userId === actorId && role !== 'OWNER') {
+      throw new BadRequestException('Cannot downgrade your own owner role');
+    }
+    return this.prisma.workspaceMember.update({
+      where: { id: memberId },
+      data: { role },
+      include: {
+        user: { select: { id: true, email: true, name: true, avatarUrl: true } },
+      },
+    });
   }
 
   async removeMember(workspaceId: string, actorId: string, memberId: string) {
@@ -150,5 +238,69 @@ export class WorkspaceService {
     }
 
     return membership;
+  }
+
+  async listActivityLogs(
+    userId: string,
+    workspaceId?: string,
+    limit = 100,
+  ) {
+    return this.prisma.activityLog.findMany({
+      where: {
+        userId,
+        ...(workspaceId ? { workspaceId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Math.max(limit || 100, 1), 200),
+    });
+  }
+
+  async createActivityLog(
+    userId: string,
+    data: {
+      type: string;
+      method?: string;
+      url?: string;
+      statusCode?: number;
+      durationMs?: number;
+      message: string;
+      workspaceId?: string;
+    },
+  ) {
+    return this.prisma.activityLog.create({
+      data: {
+        userId,
+        workspaceId: data.workspaceId || null,
+        type: data.type || 'activity',
+        method: data.method || null,
+        url: data.url || null,
+        statusCode: data.statusCode ?? null,
+        durationMs: data.durationMs ?? null,
+        message: data.message,
+      },
+    });
+  }
+
+  async clearActivityLogs(userId: string, workspaceId?: string) {
+    await this.prisma.activityLog.deleteMany({
+      where: {
+        userId,
+        ...(workspaceId ? { workspaceId } : {}),
+      },
+    });
+    return { cleared: true };
+  }
+
+  async listEmailLogs(userId: string, userEmail?: string, limit = 100) {
+    return this.prisma.emailLog.findMany({
+      where: {
+        OR: [
+          { userId },
+          ...(userEmail ? [{ to: userEmail.trim().toLowerCase() }] : []),
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Math.max(limit || 100, 1), 200),
+    });
   }
 }

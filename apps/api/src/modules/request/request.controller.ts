@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   Param,
   Patch,
   Post,
@@ -37,5 +38,27 @@ export class RequestController {
   @Delete('requests/:id')
   remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.requestService.remove(id, user.id);
+  }
+
+  @Get('requests/:id/comments')
+  listComments(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.requestService.listComments(id, user.id);
+  }
+
+  @Post('requests/:id/comments')
+  addComment(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Body('content') content: string,
+  ) {
+    return this.requestService.addComment(id, user.id, content || '');
+  }
+
+  @Delete('comments/:commentId')
+  deleteComment(
+    @Param('commentId') commentId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.requestService.deleteComment(commentId, user.id);
   }
 }

@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Api-Open Browser Agent",
+  "version": "1.0.0",
+  "description": "Execute CORS-free HTTP requests including localhost and private network APIs directly from Api-Open.",
+  "permissions": [],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost/*", "https://*/*", "http://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

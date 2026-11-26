@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
+import { resolveImageProxyUrl } from '../api/proxy';
 import { supabase } from '../lib/supabase';
 import { ACCENT_COLORS, useSettingsStore } from '../stores/settings';
 import { useWorkspaceStore } from '../stores/workspace';
@@ -25,6 +26,31 @@ const uploadingAvatar = ref(false);
 const avatarFileInput = ref<HTMLInputElement | null>(null);
 const newPassword = ref('');
 const savingPassword = ref(false);
+const newCertHost = ref('');
+const newCertPem = ref('');
+const newKeyPem = ref('');
+const newCaPem = ref('');
+const newCertPass = ref('');
+
+function addClientCert() {
+  if (!newCertHost.value.trim() || !newCertPem.value.trim()) {
+    ElMessage.warning('Host and Certificate PEM are required');
+    return;
+  }
+  settings.clientCerts.push({
+    host: newCertHost.value.trim(),
+    certPem: newCertPem.value.trim(),
+    keyPem: newKeyPem.value.trim() || undefined,
+    caPem: newCaPem.value.trim() || undefined,
+    passphrase: newCertPass.value || undefined,
+  });
+  newCertHost.value = '';
+  newCertPem.value = '';
+  newKeyPem.value = '';
+  newCaPem.value = '';
+  newCertPass.value = '';
+  ElMessage.success('Client certificate added');
+}
 
 watch(
   () => props.visible,
@@ -52,6 +78,34 @@ async function saveProfile() {
   }
 }
 
+function resizeImageToDataUrl(file: File, maxSize = 256): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        const width = Math.max(1, Math.round(img.width * scale));
+        const height = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(String(reader.result));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/webp', 0.85));
+      };
+      img.onerror = () => resolve(String(reader.result));
+      img.src = String(reader.result);
+    };
+    reader.onerror = () => reject(new Error('Failed to read image file'));
+    reader.readAsDataURL(file);
+  });
+}
+
 async function handleAvatarUpload(e: Event) {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
@@ -66,34 +120,37 @@ async function handleAvatarUpload(e: Event) {
     return;
   }
 
-  if (!supabase) {
-    ElMessage.error('Supabase client is not configured');
-    return;
-  }
-
   uploadingAvatar.value = true;
   try {
-    const ext = file.name.split('.').pop() || 'png';
-    const path = `${ws.user.id}/avatar-${Date.now()}.${ext}`;
-    const { error } = await supabase.storage
-      .from('avatars')
-      .upload(path, file, { upsert: true });
+    let uploadedUrl = '';
+    if (supabase) {
+      try {
+        const ext = file.name.split('.').pop() || 'png';
+        const path = `${ws.user.id}/avatar-${Date.now()}.${ext}`;
+        const { error } = await supabase.storage
+          .from('avatars')
+          .upload(path, file, { upsert: true });
+        if (!error) {
+          const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+          uploadedUrl = data.publicUrl;
+        }
+      } catch {
+        // fallback to API DB avatar below
+      }
+    }
 
-    if (error) throw error;
+    if (!uploadedUrl) {
+      uploadedUrl = await resizeImageToDataUrl(file, 256);
+    }
 
-    const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-    profileAvatar.value = data.publicUrl;
+    profileAvatar.value = uploadedUrl;
     await ws.updateProfile({
       name: profileName.value,
       avatarUrl: profileAvatar.value,
     });
     ElMessage.success('Avatar uploaded & saved');
   } catch (err) {
-    ElMessage.error(
-      err instanceof Error
-        ? `${err.message} (pastikan bucket "avatars" sudah dibuat Public di Supabase Storage)`
-        : 'Upload failed',
-    );
+    ElMessage.error(err instanceof Error ? err.message : 'Upload failed');
   } finally {
     uploadingAvatar.value = false;
     input.value = '';
@@ -230,6 +287,15 @@ async function handleChangePassword() {
               :step="5"
             />
           </el-form-item>
+
+          <el-form-item label="Custom Proxy / Agent URL">
+            <el-input
+              v-model="settings.customProxyUrl"
+              size="small"
+              placeholder="Default (/api) — or e.g. http://localhost:3001/api"
+              clearable
+            />
+          </el-form-item>
         </el-form>
 
         <div style="display: flex; justify-content: flex-end; margin-top: 8px">
@@ -242,7 +308,7 @@ async function handleChangePassword() {
       <el-tab-pane label="Profile" name="profile">
         <template v-if="ws.isAuthenticated">
           <div class="profile-preview">
-            <el-avatar :size="56" :src="profileAvatar || undefined">
+            <el-avatar :size="56" :src="resolveImageProxyUrl(profileAvatar)">
               {{ (profileName || ws.user?.email || 'U').slice(0, 1).toUpperCase() }}
             </el-avatar>
             <div style="flex: 1">
@@ -311,6 +377,137 @@ async function handleChangePassword() {
           description="Sign in to manage your profile"
           :image-size="60"
         />
+      </el-tab-pane>
+
+      <el-tab-pane label="Certificates (mTLS)" name="certs">
+        <el-form label-position="top" size="small">
+          <el-form-item label="Target Host (e.g. api.internal.com)">
+            <el-input v-model="newCertHost" placeholder="api.example.com" />
+          </el-form-item>
+          <el-form-item label="Client Certificate (PEM)">
+            <el-input
+              v-model="newCertPem"
+              type="textarea"
+              :rows="3"
+              placeholder="-----BEGIN CERTIFICATE-----"
+            />
+          </el-form-item>
+          <el-form-item label="Private Key (PEM)">
+            <el-input
+              v-model="newCertPem"
+              v-show="false"
+            />
+            <el-input
+              v-model="newKeyPem"
+              type="textarea"
+              :rows="3"
+              placeholder="-----BEGIN PRIVATE KEY-----"
+            />
+          </el-form-item>
+          <el-form-item label="CA Certificate (Optional PEM)">
+            <el-input
+              v-model="newCaPem"
+              type="textarea"
+              :rows="2"
+              placeholder="-----BEGIN CERTIFICATE-----"
+            />
+          </el-form-item>
+          <el-form-item label="Passphrase (Optional)">
+            <el-input v-model="newCertPass" type="password" show-password />
+          </el-form-item>
+          <el-button type="primary" size="small" @click="addClientCert">
+            Add Client Certificate
+          </el-button>
+        </el-form>
+
+        <el-divider v-if="settings.clientCerts.length">Configured Certificates</el-divider>
+        <div
+          v-for="(cert, idx) in settings.clientCerts"
+          :key="`${cert.host}-${idx}`"
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 10px;
+            border: 1px solid var(--ao-border);
+            border-radius: 6px;
+            margin-bottom: 6px;
+          "
+        >
+          <span><strong>{{ cert.host }}</strong></span>
+          <el-button
+            size="small"
+            type="danger"
+            link
+            @click="settings.clientCerts.splice(idx, 1)"
+          >
+            Remove
+          </el-button>
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="AI Assistant" name="ai">
+        <el-alert
+          type="success"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 12px"
+          title="Free Local Mode works 100% offline without any API key. Optionally connect your own free-tier API key or local Ollama."
+        />
+        <el-form label-width="130px" size="small">
+          <el-form-item label="AI Provider">
+            <el-select v-model="settings.aiConfig.provider" style="width: 100%">
+              <el-option label="Free Local Generator (No API Key)" value="local" />
+              <el-option label="Google Gemini (BYOK Free Tier)" value="gemini" />
+              <el-option label="Groq (BYOK Free Tier)" value="groq" />
+              <el-option label="OpenRouter (BYOK Free Models)" value="openrouter" />
+              <el-option label="Local Ollama (http://localhost:11434)" value="ollama" />
+            </el-select>
+          </el-form-item>
+          <el-form-item
+            v-if="settings.aiConfig.provider !== 'local' && settings.aiConfig.provider !== 'ollama'"
+            label="API Key"
+          >
+            <el-input
+              v-model="settings.aiConfig.apiKey"
+              show-password
+              placeholder="Stored locally in your browser"
+            />
+          </el-form-item>
+          <el-form-item v-if="settings.aiConfig.provider === 'ollama'" label="Ollama URL">
+            <el-input v-model="settings.aiConfig.ollamaUrl" placeholder="http://localhost:11434" />
+          </el-form-item>
+          <el-form-item v-if="settings.aiConfig.provider !== 'local'" label="Model (optional)">
+            <el-input
+              v-model="settings.aiConfig.model"
+              placeholder="Leave blank for default free model"
+            />
+          </el-form-item>
+        </el-form>
+      </el-tab-pane>
+
+      <el-tab-pane label="Corporate Proxy / Tunnel" name="tunnel">
+        <el-form label-width="130px" size="small">
+          <el-form-item label="Proxy / Tunnel URL">
+            <el-input
+              v-model="settings.tunnelProxy.url"
+              placeholder="http://proxy.corp:8080 or socks5://127.0.0.1:1080"
+            />
+          </el-form-item>
+          <el-form-item label="Username">
+            <el-input v-model="settings.tunnelProxy.username" placeholder="Optional" />
+          </el-form-item>
+          <el-form-item label="Password">
+            <el-input v-model="settings.tunnelProxy.password" show-password placeholder="Optional" />
+          </el-form-item>
+          <el-divider />
+          <el-form-item label="Language / Bahasa">
+            <el-select v-model="settings.locale" style="width: 100%">
+              <el-option label="English (EN)" value="en" />
+              <el-option label="Bahasa Indonesia (ID)" value="id" />
+            </el-select>
+          </el-form-item>
+        </el-form>
       </el-tab-pane>
     </el-tabs>
   </el-dialog>

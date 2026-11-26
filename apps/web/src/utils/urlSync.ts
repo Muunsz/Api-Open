@@ -76,3 +76,56 @@ function encodePreservingVars(val: string): string {
     )
     .join('');
 }
+
+/**
+ * Extracts path parameter names from :param or {param} segments in the URL path,
+ * ignoring {{envVar}} placeholders, protocol schemes, and numeric port numbers.
+ */
+export function extractPathParamNames(rawUrl: string): string[] {
+  if (!rawUrl) return [];
+  const pathOnly = rawUrl.split('?')[0].split('#')[0];
+  // Remove {{...}} so {var} inside {{var}} is never treated as a path param
+  const withoutMustache = pathOnly.replace(/\{\{[^}]*\}\}/g, '');
+  // Strip protocol + host if present, or just protocol
+  const afterScheme = withoutMustache.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, '');
+  const slashIdx = afterScheme.indexOf('/');
+  const pathPart = slashIdx >= 0 ? afterScheme.slice(slashIdx) : afterScheme;
+
+  const found: string[] = [];
+  const seen = new Set<string>();
+  const regex = /(?:\/:([a-zA-Z_][a-zA-Z0-9_]*))|(?:\{([a-zA-Z_][a-zA-Z0-9_]*)\})/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(pathPart)) !== null) {
+    const name = match[1] || match[2];
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      found.push(name);
+    }
+  }
+  return found;
+}
+
+/**
+ * Replaces :param and {param} placeholders in the URL path with resolved values.
+ */
+export function applyPathParamsToUrl(
+  resolvedUrl: string,
+  pathParams: KeyValueItem[],
+  resolveFn: (val: string) => string,
+): string {
+  if (!resolvedUrl || !pathParams?.length) return resolvedUrl;
+  const [withoutQuery, ...rest] = resolvedUrl.split('?');
+  const suffix = rest.length ? `?${rest.join('?')}` : '';
+  let nextPath = withoutQuery;
+
+  for (const param of pathParams) {
+    if (!param.enabled || !param.key.trim()) continue;
+    const rawVal = resolveFn(param.value ?? '');
+    if (rawVal === '') continue;
+    const encoded = encodeURIComponent(rawVal);
+    const key = param.key.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    nextPath = nextPath.replace(new RegExp(`/:${key}(?=/|$)`, 'g'), `/${encoded}`);
+    nextPath = nextPath.replace(new RegExp(`\\{${key}\\}`, 'g'), encoded);
+  }
+  return `${nextPath}${suffix}`;
+}

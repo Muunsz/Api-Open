@@ -37,13 +37,17 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships WorkspaceMember[]
-  histories   RequestHistory[]
+  memberships  WorkspaceMember[]
+  histories    RequestHistory[]
+  activityLogs ActivityLog[]
+  comments     RequestComment[]
 }
 
 model Workspace {
   id        String        @id @default(uuid())
   name      String
+  summary   String?       @db.Text
+  readme    String?       @db.Text
   type      WorkspaceType @default(PERSONAL)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
@@ -52,6 +56,8 @@ model Workspace {
   collections  Collection[]
   environments Environment[]
   histories    RequestHistory[]
+  activityLogs ActivityLog[]
+  monitors     Monitor[]
 }
 
 model WorkspaceMember {
@@ -72,6 +78,9 @@ model Collection {
   workspaceId String
   parentId    String?
   name        String
+  auth        Json     @default("{\"type\":\"none\"}")
+  headers     Json     @default("[]")
+  variables   Json     @default("[]")
   order       Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -80,6 +89,20 @@ model Collection {
   parent    Collection?  @relation("CollectionTree", fields: [parentId], references: [id], onDelete: Cascade)
   children  Collection[] @relation("CollectionTree")
   requests  ApiRequest[]
+  snapshots CollectionSnapshot[]
+}
+
+model CollectionSnapshot {
+  id           String   @id @default(uuid())
+  collectionId String
+  version      String
+  note         String?
+  data         Json
+  createdAt    DateTime @default(now())
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@index([collectionId, createdAt(sort: Desc)])
 }
 
 model ApiRequest {
@@ -90,15 +113,19 @@ model ApiRequest {
   url              String     @default("")
   headers          Json       @default("[]")
   queryParams      Json       @default("[]")
+  pathParams       Json       @default("[]")
   auth             Json       @default("{\"type\":\"none\"}")
   body             Json       @default("{\"mode\":\"none\"}")
+  examples         Json       @default("[]")
+  settings         Json       @default("{}")
   preRequestScript String?    @db.Text
   testScript       String?    @db.Text
   order            Int        @default(0)
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
-  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  collection Collection       @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  comments   RequestComment[]
 }
 
 model Environment {
@@ -126,4 +153,72 @@ model RequestHistory {
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ActivityLog {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  workspaceId String?  @map("workspace_id")
+  type        String
+  method      String?
+  url         String?
+  statusCode  Int?     @map("status_code")
+  durationMs  Int?     @map("duration_ms")
+  message     String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@map("activity_logs")
+}
+
+model EmailLog {
+  id          String   @id @default(uuid())
+  userId      String?  @map("user_id")
+  workspaceId String?  @map("workspace_id")
+  to          String
+  subject     String
+  category    String   @default("general")
+  status      String
+  error       String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([to, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("email_logs")
+}
+
+model RequestComment {
+  id        String   @id @default(uuid())
+  requestId String
+  userId    String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  request ApiRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user    User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt(sort: Desc)])
+}
+
+model Monitor {
+  id              String    @id @default(uuid())
+  workspaceId     String
+  collectionId    String
+  name            String
+  intervalMinutes Int       @default(60)
+  enabled         Boolean   @default(true)
+  lastRunAt       DateTime?
+  lastStatus      String?
+  lastPassed      Int       @default(0)
+  lastFailed      Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
 }

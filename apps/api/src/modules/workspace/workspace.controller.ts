@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { WorkspaceRole } from '@prisma/client';
@@ -31,6 +32,56 @@ export class WorkspaceController {
     return this.workspaceService.updateProfile(user.id, body);
   }
 
+  @Get('logs')
+  listLogs(
+    @CurrentUser() user: AuthUser,
+    @Query('workspaceId') workspaceId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.workspaceService.listActivityLogs(
+      user.id,
+      workspaceId,
+      limit ? Number(limit) : 100,
+    );
+  }
+
+  @Post('logs')
+  createLog(
+    @CurrentUser() user: AuthUser,
+    @Body()
+    body: {
+      type: string;
+      method?: string;
+      url?: string;
+      statusCode?: number;
+      durationMs?: number;
+      message: string;
+      workspaceId?: string;
+    },
+  ) {
+    return this.workspaceService.createActivityLog(user.id, body);
+  }
+
+  @Delete('logs')
+  clearLogs(
+    @CurrentUser() user: AuthUser,
+    @Query('workspaceId') workspaceId?: string,
+  ) {
+    return this.workspaceService.clearActivityLogs(user.id, workspaceId);
+  }
+
+  @Get('email-logs')
+  listEmailLogs(
+    @CurrentUser() user: AuthUser,
+    @Query('limit') limit?: string,
+  ) {
+    return this.workspaceService.listEmailLogs(
+      user.id,
+      user.email,
+      limit ? Number(limit) : 100,
+    );
+  }
+
   @Get()
   list(@CurrentUser() user: AuthUser) {
     return this.workspaceService.listForUser(user.id);
@@ -42,6 +93,15 @@ export class WorkspaceController {
       user.id,
       name || 'Team Workspace',
     );
+  }
+
+  @Patch(':workspaceId')
+  updateWorkspace(
+    @Param('workspaceId') workspaceId: string,
+    @CurrentUser() user: AuthUser,
+    @Body() body: { name?: string; summary?: string; readme?: string },
+  ) {
+    return this.workspaceService.updateWorkspace(workspaceId, user.id, body);
   }
 
   @Get(':workspaceId/members')
@@ -63,6 +123,21 @@ export class WorkspaceController {
       user.id,
       body.email,
       body.role ?? 'EDITOR',
+    );
+  }
+
+  @Patch(':workspaceId/members/:memberId')
+  updateMemberRole(
+    @Param('workspaceId') workspaceId: string,
+    @Param('memberId') memberId: string,
+    @CurrentUser() user: AuthUser,
+    @Body('role') role: WorkspaceRole,
+  ) {
+    return this.workspaceService.updateMemberRole(
+      workspaceId,
+      user.id,
+      memberId,
+      role,
     );
   }
 

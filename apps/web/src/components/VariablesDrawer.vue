@@ -49,8 +49,22 @@ const globalEnvs = computed(() => ws.environments.filter((e) => e.isGlobal));
           <span class="var-val">{{ v.isSecret ? '••••••' : v.value }}</span>
         </div>
       </div>
+      <div v-else-if="ws.environments.length" class="vars-list">
+        <el-text size="small" type="info" style="margin-bottom: 4px">
+          Select an active environment:
+        </el-text>
+        <el-button
+          v-for="env in ws.environments"
+          :key="env.id"
+          size="small"
+          plain
+          @click="ws.activeEnvId = env.id"
+        >
+          {{ env.name }} ({{ env.variables.length }} vars)
+        </el-button>
+      </div>
       <el-text v-else size="small" type="info">
-        No active environment selected.
+        No environments created yet.
       </el-text>
     </div>
 

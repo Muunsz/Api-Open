@@ -1,6 +1,7 @@
 :root {
   --ao-bg: #f6f8fb;
   --ao-surface: #ffffff;
+  --ao-surface-2: #f1f5f9;
   --ao-surface-elevated: #f9fafb;
   --ao-border: #e4e7ed;
   --ao-text: #1f2937;
@@ -14,6 +15,7 @@ html.dark {
   color-scheme: dark;
   --ao-bg: #0f1117;
   --ao-surface: #161922;
+  --ao-surface-2: #1d212d;
   --ao-surface-elevated: #1d212d;
   --ao-border: #2a3040;
   --ao-text: #e5e7eb;
@@ -35,12 +37,18 @@ html.dark {
 
 html,
 body {
+  height: 100%;
+  overflow: hidden;
   margin: 0;
   padding: 0;
   background-color: var(--ao-bg);
   color: var(--ao-text);
   font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+#app {
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Custom subtle scrollbars */
@@ -140,4 +148,48 @@ html.dark .kt-card {
   background-color: var(--ao-surface);
   border-color: var(--ao-border);
   color: var(--ao-text);
+}
+
+/* Ensure Element Plus poppers & select dropdowns always have solid opaque surface */
+.el-popper.is-light,
+.el-select__popper.el-popper,
+.el-dropdown__popper.el-popper {
+  background: var(--ao-surface-elevated) !important;
+  background-color: var(--ao-surface-elevated) !important;
+  border: 1px solid var(--ao-border) !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28) !important;
+}
+.el-select-dropdown {
+  background: var(--ao-surface-elevated) !important;
+}
+.el-select-dropdown__list {
+  padding: 6px 0 !important;
+}
+.el-select-dropdown__item {
+  height: 34px !important;
+  line-height: 34px !important;
+  padding: 0 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  color: var(--ao-text) !important;
+}
+.el-select-dropdown__item.is-hovering,
+.el-select-dropdown__item:hover {
+  background-color: var(--ao-hover) !important;
+}
+.method-select-popper {
+  min-width: 124px !important;
+}
+
+/* Borderless seamless inputs inside Element Plus tables */
+.el-table .el-input__wrapper,
+.el-table .el-input__wrapper:hover,
+.el-table .el-input__wrapper.is-focus,
+.el-table .el-select__wrapper,
+.el-table .el-select__wrapper:hover,
+.el-table .el-select__wrapper.is-focused {
+  box-shadow: none !important;
+  background-color: transparent !important;
+  padding-left: 2px;
+  padding-right: 2px;
 }

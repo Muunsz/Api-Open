@@ -1,58 +1,56 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import type { EnvVariable, FormDataItem, HttpMethod } from '@api-open/shared';
-import {
-  Bell,
-  Clock,
-  Collection,
-  CopyDocument,
-  Delete,
-  Document,
-  Download,
-  Expand,
-  Fold,
-  Folder,
-  House,
-  Key,
-  Menu,
-  Monitor,
-  Moon,
-  MoreFilled,
-  Plus,
-  QuestionFilled,
-  Search,
-  Setting,
-  Share,
-  Sunny,
-  Upload,
-  VideoPlay,
-} from '@element-plus/icons-vue';
+import type { HttpMethod } from '@api-open/shared';
+import { FolderChecked, House, Key, Promotion } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
-import { executeProxyRequest } from './api/proxy';
+import { workspaceApi } from './api/workspace';
+import AuthDialogs from './components/AuthDialogs.vue';
 import CollectionRunnerDialog from './components/CollectionRunnerDialog.vue';
+import ConsoleDrawer from './components/ConsoleDrawer.vue';
 import CookiesDialog from './components/CookiesDialog.vue';
-import KeyValueTable from './components/KeyValueTable.vue';
+import EnvironmentDialog from './components/EnvironmentDialog.vue';
 import RealtimePanel from './components/RealtimePanel.vue';
+import RequestEditorPane from './components/RequestEditorPane.vue';
+import ResponseViewerPane from './components/ResponseViewerPane.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
+import StatusFooter from './components/StatusFooter.vue';
 import SupportDialog from './components/SupportDialog.vue';
+import TeamWorkspaceDialog from './components/TeamWorkspaceDialog.vue';
+import TopHeaderBar from './components/TopHeaderBar.vue';
 import VariablesDrawer from './components/VariablesDrawer.vue';
+import WorkspaceModals from './components/WorkspaceModals.vue';
+import WorkspaceOverviewPane from './components/WorkspaceOverviewPane.vue';
+import WorkspaceSidebar from './components/WorkspaceSidebar.vue';
+import DevToolboxDialog from './components/modals/DevToolboxDialog.vue';
+import PluginMarketplaceDialog from './components/modals/PluginMarketplaceDialog.vue';
+import TrashDialog from './components/modals/TrashDialog.vue';
+import WebhookBinDialog from './components/modals/WebhookBinDialog.vue';
+import {
+  downloadBlobFile,
+  exportAllCollectionsAsFormat,
+  exportAllCollectionsBundle,
+  exportCollectionAsFormat,
+  exportSingleCollectionOpenApi,
+  exportSingleCollectionPostman,
+  type CollectionExportFormat,
+} from './services/exportService';
 import { useConsoleStore } from './stores/console';
 import { useSettingsStore } from './stores/settings';
 import { useTabsStore } from './stores/tabs';
-import { type CollectionTreeNode, useWorkspaceStore } from './stores/workspace';
-import { generateCollectionDocsMarkdown } from './utils/docsGenerator';
 import {
-  type GqlFieldSummary,
-  GRAPHQL_INTROSPECTION_QUERY,
-  parseIntrospectionResponse,
-} from './utils/graphqlIntrospection';
-import { exportPostmanCollection } from './utils/postmanConverter';
-import type { SnippetLang } from './utils/snippetGenerator';
-import { resolveVariables } from './utils/variables';
+  type CollectionDto,
+  type CollectionTreeNode,
+  useWorkspaceStore,
+} from './stores/workspace';
+import type { ClientProtocol, UrlEnvChip } from './types/app';
+import { generateCollectionDocsMarkdown } from './utils/docsGenerator';
+import type { GqlFieldSummary } from './utils/graphqlIntrospection';
+import { resolveDynamicVariable, resolveVariables } from './utils/variables';
 
 const store = useTabsStore();
 const ws = useWorkspaceStore();
 const settings = useSettingsStore();
+const consoleStore = useConsoleStore();
 
 const methods: HttpMethod[] = [
   'GET',
@@ -64,14 +62,18 @@ const methods: HttpMethod[] = [
   'OPTIONS',
 ];
 
-const sidebarTab = ref<'collections' | 'history'>('collections');
 const mobileSidebarVisible = ref(false);
 const savedProtocol = localStorage.getItem('api_open_protocol_v1');
-const clientProtocol = ref<'http' | 'graphql' | 'ws' | 'sse'>(
-  savedProtocol === 'graphql' || savedProtocol === 'ws' || savedProtocol === 'sse'
+const clientProtocol = ref<ClientProtocol>(
+  savedProtocol === 'graphql' ||
+    savedProtocol === 'ws' ||
+    savedProtocol === 'sse'
     ? savedProtocol
     : 'http',
 );
+
+const activeRequestTab = ref('params');
+
 watch(clientProtocol, (val) => {
   try {
     localStorage.setItem('api_open_protocol_v1', val);
@@ -84,233 +86,142 @@ watch(clientProtocol, (val) => {
     activeRequestTab.value = 'body';
   }
 });
-const activeRequestTab = ref('params');
-const activeResponseTab = ref('body');
-const responseViewMode = ref<'pretty' | 'raw'>('pretty');
 
-// Auth modal state
+// Dialog & drawer visibility states
 const authDialogVisible = ref(false);
-const authMode = ref<'login' | 'register'>('login');
-const authEmail = ref('');
-const authPassword = ref('');
-const authSubmitting = ref(false);
-
-// Save request modal state
+const setPasswordDialogVisible = ref(false);
 const saveDialogVisible = ref(false);
 const saveRequestName = ref('');
 const saveCollectionId = ref('');
-
-// New collection modal state
 const newCollectionVisible = ref(false);
-const newCollectionName = ref('');
-
-// Environments modal state
 const envDialogVisible = ref(false);
-const newEnvName = ref('');
-const editingEnvId = ref('');
-const editingEnvVars = ref<EnvVariable[]>([]);
-
-// Import cURL & Code Snippet modals
+const envDialogInitialId = ref<string | undefined>(undefined);
 const curlDialogVisible = ref(false);
-const curlInput = ref('');
 const snippetDialogVisible = ref(false);
-const snippetLang = ref<SnippetLang>('curl');
-
-// Postman / OpenAPI Import & Collection Runner
-const postmanFileInput = ref<HTMLInputElement | null>(null);
-const openApiFileInput = ref<HTMLInputElement | null>(null);
 const runnerVisible = ref(false);
 const runnerTargetNode = ref<CollectionTreeNode | null>(null);
-
-// API Docs Modal
 const docsVisible = ref(false);
+const docsCollectionId = ref<string | undefined>(undefined);
 const docsTitle = ref('');
 const docsMarkdown = ref('');
-
-// Team Workspace Modal
 const teamDialogVisible = ref(false);
-const newTeamName = ref('');
-const inviteEmail = ref('');
-const inviteRole = ref<'OWNER' | 'EDITOR' | 'VIEWER'>('EDITOR');
-const inviting = ref(false);
-
-// GraphQL Introspection Modal
 const gqlSchemaVisible = ref(false);
-const gqlLoading = ref(false);
 const gqlQueries = ref<GqlFieldSummary[]>([]);
 const gqlMutations = ref<GqlFieldSummary[]>([]);
-const fetchingOAuthToken = ref(false);
-
-// Settings & Profile Modal
 const settingsVisible = ref(false);
 const settingsInitialTab = ref<'layout' | 'profile'>('layout');
-const splitContainerRef = ref<HTMLElement | null>(null);
-
-// Search API (Command Palette) & Keyboard Shortcuts
-const urlInputRef = ref<{ focus?: () => void } | null>(null);
 const searchDialogVisible = ref(false);
-const searchQuery = ref('');
-const searchInputRef = ref<{ focus?: () => void } | null>(null);
 const shortcutsDialogVisible = ref(false);
-const shortcutSearch = ref('');
+const toolboxVisible = ref(false);
+const webhookBinVisible = ref(false);
+const trashVisible = ref(false);
+const marketplaceVisible = ref(false);
 const cookiesDialogVisible = ref(false);
-const consoleStore = useConsoleStore();
 const variablesDrawerVisible = ref(false);
 const supportDialogVisible = ref(false);
 const consoleDrawerVisible = ref(false);
-const overviewDialogVisible = ref(false);
+const downloadAppDialogVisible = ref(false);
+const collectionSettingsVisible = ref(false);
+const collectionSettingsTarget = ref<CollectionDto | null>(null);
+const specViewerVisible = ref(false);
+const monitorsVisible = ref(false);
+const flowsVisible = ref(false);
+const dbClientVisible = ref(false);
+const schemasVisible = ref(false);
+const proxyRecorderVisible = ref(false);
+const snapshotsVisible = ref(false);
+const snapshotsTarget = ref<CollectionDto | null>(null);
+const gitSyncVisible = ref(false);
+const splitViewEnabled = ref(false);
+const secondaryTabId = ref('');
+const publicDocsData = ref<{
+  id: string;
+  name: string;
+  requests: Array<{ id: string; name: string; method: string; url: string }>;
+  folders: Array<{ id: string; name: string; requests: Array<{ id: string; name: string; method: string; url: string }> }>;
+} | null>(null);
 const overviewTabActive = ref(false);
-const overviewSubTab = ref<'docs' | 'updates' | 'settings'>('docs');
+
+const splitContainerRef = ref<HTMLElement | null>(null);
+const urlInputRef = ref<{ focus?: () => void } | null>(null);
+const urlFocused = ref(false);
+const editingVarKey = ref<string | null>(null);
+const editingVarValue = ref('');
+const sidebarRef = ref<{
+  triggerPostmanImport?: () => void;
+  triggerOpenApiImport?: () => void;
+} | null>(null);
+
 watch(
   () => store.activeTabId,
   () => {
     overviewTabActive.value = false;
-  }
+  },
 );
+
 function openOverviewTab() {
   overviewTabActive.value = true;
 }
-const notifTab = ref<'all' | 'error' | 'activity'>('all');
-const sidebarSections = ref<string[]>(['environments']);
-const filteredNotifications = computed(() => {
-  if (notifTab.value === 'all') return consoleStore.logs.slice(0, 20);
-  return consoleStore.logs
-    .filter((entry) => entry.type === notifTab.value)
-    .slice(0, 20);
-});
+
 const workspaceSummary = ref(
-  localStorage.getItem('api_open_workspace_summary_v1') ?? ''
+  localStorage.getItem('api_open_workspace_summary_v1') ?? '',
 );
 const workspaceReadme = ref(
-  localStorage.getItem('api_open_workspace_readme_v1') ?? ''
-);
-watch(workspaceSummary, (val) =>
-  localStorage.setItem('api_open_workspace_summary_v1', val)
-);
-watch(workspaceReadme, (val) =>
-  localStorage.setItem('api_open_workspace_readme_v1', val)
+  localStorage.getItem('api_open_workspace_readme_v1') ?? '',
 );
 
-const shortcutGroups = [
-  {
-    title: 'General',
-    items: [
-      { keys: '?', desc: 'Help / Shortcuts' },
-      { keys: 'Ctrl + K', desc: 'Search API & Commands' },
-      { keys: 'Ctrl + /', desc: 'Keyboard Shortcuts' },
-      { keys: 'Ctrl + D', desc: 'Close Active Tab' },
-      { keys: 'Ctrl + B', desc: 'Hide / Show Sidebar' },
-    ],
+const tab = computed(() => store.activeTab);
+
+const isResponseHorizontal = computed(
+  () =>
+    settings.responsePosition === 'left' ||
+    settings.responsePosition === 'right',
+);
+
+let syncingUrl = false;
+watch(
+  () => tab.value?.queryParams,
+  () => {
+    if (syncingUrl) return;
+    syncingUrl = true;
+    store.syncUrlFromParams();
+    syncingUrl = false;
   },
-  {
-    title: 'Request',
-    items: [
-      { keys: 'Ctrl + Enter', desc: 'Send Request' },
-      { keys: 'Ctrl + S', desc: 'Save to Collections' },
-      { keys: 'Ctrl + U', desc: 'Share Request (Copy JSON)' },
-      { keys: 'Ctrl + L', desc: 'Focus URL Bar' },
-      { keys: 'Alt + ↑ / ↓', desc: 'Next / Previous HTTP Method' },
-      { keys: 'Alt + G', desc: 'Select GET Method' },
-      { keys: 'Alt + H', desc: 'Select HEAD Method' },
-      { keys: 'Alt + P', desc: 'Select POST Method' },
-      { keys: 'Alt + U', desc: 'Select PUT Method' },
-      { keys: 'Alt + X', desc: 'Select DELETE Method' },
-    ],
-  },
-  {
-    title: 'Response',
-    items: [
-      { keys: 'Ctrl + J', desc: 'Download Response as File' },
-      { keys: 'Ctrl + .', desc: 'Copy Response to Clipboard' },
-    ],
-  },
-  {
-    title: 'Navigation & Team',
-    items: [
-      { keys: 'Alt + R', desc: 'Switch to HTTP / REST' },
-      { keys: 'Alt + W', desc: 'Switch to WebSocket' },
-      { keys: 'Alt + S', desc: 'Open Settings' },
-      { keys: 'Alt + M', desc: 'Open Profile' },
-      { keys: 'Ctrl + M', desc: 'Invite Team Member' },
-    ],
-  },
-];
+  { deep: true },
+);
 
-const filteredShortcutGroups = computed(() => {
-  const q = shortcutSearch.value.trim().toLowerCase();
-  if (!q) return shortcutGroups;
-  return shortcutGroups
-    .map((g) => ({
-      title: g.title,
-      items: g.items.filter(
-        (i) =>
-          i.desc.toLowerCase().includes(q) ||
-          i.keys.toLowerCase().includes(q),
-      ),
-    }))
-    .filter((g) => g.items.length > 0);
-});
-
-const searchableRequests = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase();
-  const items: Array<{
-    kind: 'saved' | 'history';
-    id: string;
-    name: string;
-    method: HttpMethod;
-    url: string;
-    rawReq?: (typeof ws.collections)[number]['requests'][number];
-  }> = [];
-
-  for (const col of ws.collections) {
-    for (const req of col.requests ?? []) {
-      items.push({
-        kind: 'saved',
-        id: req.id,
-        name: `${col.name} / ${req.name}`,
-        method: req.method,
-        url: req.url,
-        rawReq: req,
-      });
-    }
-  }
-
-  for (const h of store.history) {
-    items.push({
-      kind: 'history',
-      id: h.id,
-      name: 'History',
-      method: h.method,
-      url: h.url,
-    });
-  }
-
-  if (!q) return items.slice(0, 20);
-  return items
-    .filter(
-      (item) =>
-        item.name.toLowerCase().includes(q) ||
-        item.url.toLowerCase().includes(q) ||
-        item.method.toLowerCase().includes(q),
-    )
-    .slice(0, 20);
-});
-
-function openSearchPalette() {
-  searchQuery.value = '';
-  searchDialogVisible.value = true;
-  nextTick(() => {
-    searchInputRef.value?.focus?.();
-  });
+function handleUrlInput() {
+  if (syncingUrl) return;
+  syncingUrl = true;
+  store.syncParamsFromUrl();
+  syncingUrl = false;
 }
 
-function selectSearchItem(item: (typeof searchableRequests.value)[number]) {
-  if (item.kind === 'saved' && item.rawReq) {
-    store.openSavedRequest(item.rawReq);
-  } else {
-    store.addTab({ method: item.method, url: item.url, name: item.url });
-  }
-  searchDialogVisible.value = false;
+function startResponseResize(e: MouseEvent) {
+  e.preventDefault();
+  const container = splitContainerRef.value;
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
+
+  const onMove = (ev: MouseEvent) => {
+    let pct = settings.responseSizePercent;
+    if (settings.responsePosition === 'right') {
+      pct = ((rect.right - ev.clientX) / rect.width) * 100;
+    } else if (settings.responsePosition === 'left') {
+      pct = ((ev.clientX - rect.left) / rect.width) * 100;
+    } else if (settings.responsePosition === 'bottom') {
+      pct = ((rect.bottom - ev.clientY) / rect.height) * 100;
+    } else {
+      pct = ((ev.clientY - rect.top) / rect.height) * 100;
+    }
+    settings.responseSizePercent = Math.round(Math.min(75, Math.max(25, pct)));
+  };
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+  };
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
 }
 
 function cycleMethod(dir: 1 | -1) {
@@ -330,15 +241,11 @@ async function copyActiveResponse() {
 function downloadActiveResponse() {
   const res = tab.value?.response;
   if (!res) return;
-  const blob = new Blob([res.body], {
-    type: res.headers['content-type'] || 'text/plain',
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `response-${Date.now()}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlobFile(
+    res.body,
+    `response-${Date.now()}.json`,
+    res.headers['content-type'] || 'text/plain',
+  );
 }
 
 async function shareActiveRequest() {
@@ -359,6 +266,11 @@ async function shareActiveRequest() {
   ElMessage.success('Request JSON copied to clipboard for sharing');
 }
 
+function openSettings(tabName: 'layout' | 'profile' = 'layout') {
+  settingsInitialTab.value = tabName;
+  settingsVisible.value = true;
+}
+
 function handleGlobalKeydown(e: KeyboardEvent) {
   const mod = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
@@ -376,12 +288,15 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 
   if (mod && key === 'k') {
     e.preventDefault();
-    openSearchPalette();
+    searchDialogVisible.value = true;
     return;
   }
   if (mod && key === 'enter') {
     e.preventDefault();
-    if (clientProtocol.value === 'http' || clientProtocol.value === 'graphql') {
+    if (
+      clientProtocol.value === 'http' ||
+      clientProtocol.value === 'graphql'
+    ) {
       store.sendActiveRequest();
     }
     return;
@@ -448,7 +363,6 @@ function handleGlobalKeydown(e: KeyboardEvent) {
     return;
   }
 
-  // Hoppscotch Alt+Method & Alt+Navigation shortcuts
   if (e.altKey && !mod) {
     if (e.key === 'ArrowUp') {
       e.preventDefault();
@@ -487,139 +401,15 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   }
 }
 
-function openSettings(tabName: 'layout' | 'profile' = 'layout') {
-  settingsInitialTab.value = tabName;
-  settingsVisible.value = true;
-}
-
-const isSidebarVertical = computed(
-  () => settings.sidebarPosition === 'top' || settings.sidebarPosition === 'bottom',
-);
-
-const isResponseHorizontal = computed(
-  () => settings.responsePosition === 'left' || settings.responsePosition === 'right',
-);
-
-const mobileDrawerDirection = computed(() => {
-  const map: Record<string, 'ltr' | 'rtl' | 'ttb' | 'btt'> = {
-    left: 'ltr',
-    right: 'rtl',
-    top: 'ttb',
-    bottom: 'btt',
-  };
-  return map[settings.sidebarPosition] ?? 'ltr';
-});
-
-function startSidebarResize(e: MouseEvent) {
-  e.preventDefault();
-  const startX = e.clientX;
-  const startY = e.clientY;
-  const startWidth = settings.sidebarWidth;
-  const startHeight = settings.sidebarHeight;
-
-  const onMove = (ev: MouseEvent) => {
-    if (settings.sidebarPosition === 'left') {
-      settings.sidebarWidth = Math.min(480, Math.max(200, startWidth + (ev.clientX - startX)));
-    } else if (settings.sidebarPosition === 'right') {
-      settings.sidebarWidth = Math.min(480, Math.max(200, startWidth + (startX - ev.clientX)));
-    } else if (settings.sidebarPosition === 'top') {
-      settings.sidebarHeight = Math.min(420, Math.max(140, startHeight + (ev.clientY - startY)));
-    } else {
-      settings.sidebarHeight = Math.min(420, Math.max(140, startHeight + (startY - ev.clientY)));
+onMounted(async () => {
+  const pubId = new URLSearchParams(window.location.search).get('publicDocs');
+  if (pubId) {
+    try {
+      publicDocsData.value = await workspaceApi.getPublicDocs(pubId);
+    } catch {
+      ElMessage.error('Public documentation not found');
     }
-  };
-  const onUp = () => {
-    window.removeEventListener('mousemove', onMove);
-    window.removeEventListener('mouseup', onUp);
-  };
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onUp);
-}
-
-function startResponseResize(e: MouseEvent) {
-  e.preventDefault();
-  const container = splitContainerRef.value;
-  if (!container) return;
-  const rect = container.getBoundingClientRect();
-
-  const onMove = (ev: MouseEvent) => {
-    let pct = settings.responseSizePercent;
-    if (settings.responsePosition === 'right') {
-      pct = ((rect.right - ev.clientX) / rect.width) * 100;
-    } else if (settings.responsePosition === 'left') {
-      pct = ((ev.clientX - rect.left) / rect.width) * 100;
-    } else if (settings.responsePosition === 'bottom') {
-      pct = ((rect.bottom - ev.clientY) / rect.height) * 100;
-    } else {
-      pct = ((ev.clientY - rect.top) / rect.height) * 100;
-    }
-    settings.responseSizePercent = Math.round(Math.min(75, Math.max(25, pct)));
-  };
-  const onUp = () => {
-    window.removeEventListener('mousemove', onMove);
-    window.removeEventListener('mouseup', onUp);
-  };
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onUp);
-}
-
-let syncingUrl = false;
-const tab = computed(() => store.activeTab);
-
-const generatedCode = computed(() => {
-  if (!snippetDialogVisible.value) return '';
-  return store.getSnippet(snippetLang.value);
-});
-
-const passedTestsCount = computed(
-  () => tab.value?.testResults.filter((t) => t.passed).length ?? 0,
-);
-
-watch(
-  () => tab.value?.queryParams,
-  () => {
-    if (syncingUrl) return;
-    syncingUrl = true;
-    store.syncUrlFromParams();
-    syncingUrl = false;
-  },
-  { deep: true },
-);
-
-function handleUrlInput() {
-  if (syncingUrl) return;
-  syncingUrl = true;
-  store.syncParamsFromUrl();
-  syncingUrl = false;
-}
-
-function handleImportCurl() {
-  try {
-    store.importCurl(curlInput.value);
-    curlInput.value = '';
-    curlDialogVisible.value = false;
-    ElMessage.success('cURL imported');
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : 'Invalid cURL command');
   }
-}
-
-async function copyGeneratedCode() {
-  await navigator.clipboard.writeText(generatedCode.value);
-  ElMessage.success('Copied to clipboard');
-}
-
-function insertTestTemplate(kind: 'status' | 'json' | 'env') {
-  if (!tab.value) return;
-  const snippets: Record<string, string> = {
-    status: `pm.test("Status code is 200", () => {\n  pm.expect(pm.response.code).to.equal(200);\n});\n`,
-    json: `pm.test("Response has expected field", () => {\n  const data = pm.response.json();\n  pm.expect(data).to.have.property("id");\n});\n`,
-    env: `const data = pm.response.json();\npm.environment.set("token", data.token);\nconsole.log("Saved token");\n`,
-  };
-  tab.value.testScript = (tab.value.testScript ? tab.value.testScript + '\n' : '') + snippets[kind];
-}
-
-onMounted(() => {
   ws.initAuth();
   window.addEventListener('keydown', handleGlobalKeydown);
 });
@@ -627,79 +417,6 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
 });
-
-const formattedBody = computed(() => {
-  const res = tab.value?.response;
-  if (!res) return '';
-  if (res.isBase64) return `[Binary payload: ${res.sizeBytes} bytes]`;
-  if (responseViewMode.value === 'raw') return res.body;
-  try {
-    return JSON.stringify(JSON.parse(res.body), null, 2);
-  } catch {
-    return res.body;
-  }
-});
-
-const responseHeadersList = computed(() => {
-  const headers = tab.value?.response?.headers ?? {};
-  return Object.entries(headers).map(([key, value]) => ({ key, value }));
-});
-
-const responseCookiesList = computed(() => {
-  const raw = tab.value?.response?.headers?.['set-cookie'];
-  if (!raw) return [];
-  return raw.split(/,(?=\s*[^;=]+=[^;]+)/).map((cookieStr) => {
-    const parts = cookieStr.split(';').map((p) => p.trim());
-    const [nameVal, ...attrs] = parts;
-    const eqIdx = nameVal.indexOf('=');
-    return {
-      name: eqIdx >= 0 ? nameVal.slice(0, eqIdx) : nameVal,
-      value: eqIdx >= 0 ? nameVal.slice(eqIdx + 1) : '',
-      attributes: attrs.join('; '),
-    };
-  });
-});
-
-const isImageResponse = computed(() => {
-  const ct = tab.value?.response?.headers['content-type'] ?? '';
-  return tab.value?.response?.isBase64 && ct.startsWith('image/');
-});
-
-const imageDataUrl = computed(() => {
-  const res = tab.value?.response;
-  if (!res) return '';
-  const ct = res.headers['content-type'] ?? 'image/png';
-  return `data:${ct};base64,${res.body}`;
-});
-
-function statusClass(code?: number): string {
-  if (!code) return 'status-1xx';
-  if (code >= 200 && code < 300) return 'status-2xx';
-  if (code >= 300 && code < 400) return 'status-3xx';
-  if (code >= 400 && code < 500) return 'status-4xx';
-  if (code >= 500) return 'status-5xx';
-  return 'status-1xx';
-}
-
-function durationClass(ms: number): string {
-  if (ms < 300) return 'status-2xx';
-  if (ms < 1000) return 'status-4xx';
-  return 'status-5xx';
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  return `${(bytes / 1024).toFixed(2)} KB`;
-}
-
-function formatJsonBody() {
-  if (!tab.value?.body.raw) return;
-  try {
-    tab.value.body.raw = JSON.stringify(JSON.parse(tab.value.body.raw), null, 2);
-  } catch {
-    // ignore invalid json
-  }
-}
 
 function handleTabEdit(
   targetName: string | number | undefined,
@@ -712,82 +429,20 @@ function handleTabEdit(
   }
 }
 
-async function handleAuthSubmit() {
-  authSubmitting.value = true;
-  try {
-    if (authMode.value === 'login') {
-      await ws.signIn(authEmail.value, authPassword.value);
-      ElMessage.success('Signed in');
-      authDialogVisible.value = false;
-    } else {
-      await ws.signUp(authEmail.value, authPassword.value);
-      ElMessage.success('Registered! Check your email or sign in.');
-      authMode.value = 'login';
-    }
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : 'Auth failed');
-  } finally {
-    authSubmitting.value = false;
-  }
-}
-
-async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
-  try {
-    await ws.signInWithOAuth(provider);
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : 'OAuth login failed');
-  }
-}
-
 async function handleSaveClick() {
   if (!ws.isAuthenticated) {
     authDialogVisible.value = true;
     ElMessage.info('Sign in first to save requests to Supabase');
     return;
   }
-  if (tab.value.savedRequestId) {
+  if (tab.value?.savedRequestId) {
     await store.saveActiveTab();
     ElMessage.success('Request updated');
     return;
   }
-  saveRequestName.value = tab.value.name || 'New Request';
+  saveRequestName.value = tab.value?.name || 'New Request';
   saveCollectionId.value = ws.collections[0]?.id ?? '';
   saveDialogVisible.value = true;
-}
-
-async function confirmSaveRequest() {
-  if (!saveCollectionId.value) {
-    ElMessage.warning('Create or select a collection first');
-    return;
-  }
-  await store.saveActiveTab(saveCollectionId.value, saveRequestName.value);
-  saveDialogVisible.value = false;
-  ElMessage.success('Request saved');
-}
-
-async function confirmCreateCollection() {
-  if (!newCollectionName.value.trim()) return;
-  await ws.createCollection(newCollectionName.value);
-  newCollectionName.value = '';
-  newCollectionVisible.value = false;
-  ElMessage.success('Collection created');
-}
-
-function handleTreeNodeClick(node: CollectionTreeNode) {
-  if (node.kind === 'request' && node.request) {
-    store.openSavedRequest(node.request);
-    mobileSidebarVisible.value = false;
-  }
-}
-
-async function handleTreeDelete(node: CollectionTreeNode) {
-  if (node.kind === 'collection' && node.collection) {
-    await ws.deleteCollection(node.collection.id);
-    ElMessage.success('Collection deleted');
-  } else if (node.kind === 'request' && node.request) {
-    await ws.deleteRequest(node.request.id);
-    ElMessage.success('Request deleted');
-  }
 }
 
 function openRunner(node: CollectionTreeNode) {
@@ -796,18 +451,44 @@ function openRunner(node: CollectionTreeNode) {
 }
 
 function handleExportCollection(node: CollectionTreeNode) {
-  const json = exportPostmanCollection(node);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${node.label.replace(/[^a-zA-Z0-9_-]/g, '_')}.postman_collection.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  exportSingleCollectionPostman(node);
   consoleStore.addLog({
     type: 'activity',
     message: `Exported collection "${node.label}"`,
   });
+}
+
+function handleExportOpenApi(node: CollectionTreeNode, format: 'json' | 'yaml') {
+  exportSingleCollectionOpenApi(node, format);
+  consoleStore.addLog({
+    type: 'activity',
+    message: `Exported OpenAPI 3.0 (${format.toUpperCase()}) for "${node.label}"`,
+  });
+}
+
+function handleExportFormat(node: CollectionTreeNode, format: CollectionExportFormat) {
+  exportCollectionAsFormat(node, format);
+  consoleStore.addLog({
+    type: 'activity',
+    message: `Exported "${node.label}" as ${format}`,
+  });
+}
+
+function handleExportAllFormat(format: CollectionExportFormat) {
+  if (!ws.collectionTree.length) {
+    ElMessage.warning('No collections to export');
+    return;
+  }
+  const workspaceName =
+    ws.workspaces.find((w) => w.id === ws.activeWorkspaceId)?.name ??
+    'Workspace';
+  exportAllCollectionsAsFormat(workspaceName, ws.collectionTree, format);
+  ElMessage.success(`Exported all collections as ${format}`);
+}
+
+function openCollectionSettings(col: CollectionDto) {
+  collectionSettingsTarget.value = col;
+  collectionSettingsVisible.value = true;
 }
 
 function exportAllCollections() {
@@ -818,22 +499,7 @@ function exportAllCollections() {
   const workspaceName =
     ws.workspaces.find((w) => w.id === ws.activeWorkspaceId)?.name ??
     'Workspace';
-  const bundle = {
-    exportedAt: new Date().toISOString(),
-    workspace: workspaceName,
-    collections: ws.collectionTree.map((node) =>
-      JSON.parse(exportPostmanCollection(node))
-    ),
-  };
-  const blob = new Blob([JSON.stringify(bundle, null, 2)], {
-    type: 'application/json',
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `api-open-collections-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  exportAllCollectionsBundle(workspaceName, ws.collectionTree);
   consoleStore.addLog({
     type: 'activity',
     message: `Exported ${ws.collectionTree.length} collection(s)`,
@@ -841,1987 +507,599 @@ function exportAllCollections() {
   ElMessage.success(`Exported ${ws.collectionTree.length} collection(s)`);
 }
 
-function triggerPostmanImport() {
-  postmanFileInput.value?.click();
-}
-
-async function handlePostmanFileSelected(e: Event) {
-  const input = e.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-  try {
-    const text = await file.text();
-    await ws.importPostmanJson(text);
-    ElMessage.success('Postman collection imported');
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : 'Import failed');
-  } finally {
-    input.value = '';
-  }
-}
-
-function triggerOpenApiImport() {
-  openApiFileInput.value?.click();
-}
-
-async function handleOpenApiFileSelected(e: Event) {
-  const input = e.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-  try {
-    const text = await file.text();
-    await ws.importOpenApiJson(text);
-    ElMessage.success('OpenAPI spec imported');
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : 'OpenAPI import failed');
-  } finally {
-    input.value = '';
-  }
-}
-
 function openDocsModal(node: CollectionTreeNode) {
+  docsCollectionId.value = node.collection?.id;
   docsTitle.value = node.label;
   docsMarkdown.value = generateCollectionDocsMarkdown(node);
   docsVisible.value = true;
 }
 
-function downloadDocsMarkdown() {
-  const blob = new Blob([docsMarkdown.value], { type: 'text/markdown' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${docsTitle.value.replace(/[^a-zA-Z0-9_-]/g, '_')}.md`;
-  a.click();
-  URL.revokeObjectURL(url);
+function openSnapshots(col: CollectionDto) {
+  snapshotsTarget.value = col;
+  snapshotsVisible.value = true;
 }
 
-async function handleCreateTeam() {
-  if (!newTeamName.value.trim()) return;
-  await ws.createTeamWorkspace(newTeamName.value);
-  newTeamName.value = '';
-  ElMessage.success('Team workspace created');
-}
-
-async function handleInviteMember() {
-  if (!inviteEmail.value.trim()) return;
-  inviting.value = true;
-  try {
-    const res = await ws.inviteMember(inviteEmail.value, inviteRole.value);
-    inviteEmail.value = '';
-    ElMessage.success(
-      res.addedImmediately
-        ? 'Member added & invitation email sent'
-        : 'Invitation email sent',
-    );
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : 'Invite failed');
-  } finally {
-    inviting.value = false;
+function toggleSplitView() {
+  splitViewEnabled.value = !splitViewEnabled.value;
+  if (splitViewEnabled.value && !secondaryTabId.value) {
+    const other = store.tabs.find((t) => t.id !== store.activeTabId);
+    secondaryTabId.value = other?.id ?? store.activeTabId;
   }
 }
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result || '');
-      resolve(result.includes(',') ? result.split(',')[1] : result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+const secondaryTab = computed(() =>
+  store.tabs.find((t) => t.id === secondaryTabId.value) ?? store.tabs[0],
+);
+
+function handleOpenGqlSchema(payload: {
+  queries: GqlFieldSummary[];
+  mutations: GqlFieldSummary[];
+}) {
+  gqlQueries.value = payload.queries;
+  gqlMutations.value = payload.mutations;
+  gqlSchemaVisible.value = true;
 }
 
-function addFormDataRow() {
-  if (!tab.value) return;
-  if (!tab.value.body.formData) tab.value.body.formData = [];
-  tab.value.body.formData.push({
-    id: Math.random().toString(36).slice(2, 10),
-    key: '',
-    type: 'text',
-    value: '',
-    enabled: true,
-  });
-}
-
-async function handleFormDataFileChange(row: FormDataItem, e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0];
-  if (!file) return;
-  row.fileName = file.name;
-  row.mimeType = file.type || 'application/octet-stream';
-  row.fileContentBase64 = await fileToBase64(file);
-}
-
-async function handleBinaryFileChange(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0];
-  if (!file || !tab.value) return;
-  tab.value.body.binary = {
-    fileName: file.name,
-    mimeType: file.type || 'application/octet-stream',
-    contentBase64: await fileToBase64(file),
-  };
-}
-
-async function fetchGraphqlSchema() {
-  if (!tab.value?.url.trim()) return;
-  gqlLoading.value = true;
-  try {
-    const resolvedUrl = resolveVariables(tab.value.url.trim(), ws.activeVariablesMap);
-    const res = await executeProxyRequest({
-      method: 'POST',
-      url: resolvedUrl,
-      headers: { 'Content-Type': 'application/json' },
-      body: {
-        mode: 'graphql',
-        graphql: { query: GRAPHQL_INTROSPECTION_QUERY, variables: '{}' },
-      },
-    });
-    const parsed = parseIntrospectionResponse(res.body);
-    gqlQueries.value = parsed.queries;
-    gqlMutations.value = parsed.mutations;
-    gqlSchemaVisible.value = true;
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : 'Introspection failed');
-  } finally {
-    gqlLoading.value = false;
-  }
-}
-
-async function fetchOAuth2Token() {
-  if (!tab.value || tab.value.auth.type !== 'oauth2') return;
-  const auth = tab.value.auth;
-  if (!auth.tokenUrl?.trim()) {
-    ElMessage.warning('Enter Token URL first');
-    return;
-  }
-  fetchingOAuthToken.value = true;
-  try {
-    const r = (v?: string) => resolveVariables(v || '', ws.activeVariablesMap);
-    const res = await executeProxyRequest({
-      method: 'POST',
-      url: r(auth.tokenUrl.trim()),
-      body: {
-        mode: 'urlencoded',
-        urlencoded: [
-          { id: '1', key: 'grant_type', value: 'client_credentials', enabled: true },
-          { id: '2', key: 'client_id', value: r(auth.clientId), enabled: Boolean(auth.clientId) },
-          { id: '3', key: 'client_secret', value: r(auth.clientSecret), enabled: Boolean(auth.clientSecret) },
-          { id: '4', key: 'scope', value: r(auth.scope), enabled: Boolean(auth.scope) },
-        ],
-      },
-    });
-    const parsed = JSON.parse(res.body) as { access_token?: string };
-    if (!parsed.access_token) {
-      throw new Error('Response did not include access_token');
+const effectiveVariablesMap = computed<Record<string, string>>(() => {
+  const vaultMap: Record<string, string> = {};
+  for (const v of consoleStore.localVault) {
+    if (v.enabled && v.key.trim()) {
+      vaultMap[v.key.trim()] = v.value ?? '';
     }
-    auth.accessToken = parsed.access_token;
-    ElMessage.success('Access token fetched');
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : 'Failed to fetch OAuth token');
-  } finally {
-    fetchingOAuthToken.value = false;
   }
+  return {
+    ...ws.activeVariablesMap,
+    ...vaultMap,
+    ...store.runtimeEnvOverrides,
+  };
+});
+
+const showUrlEnvPreview = computed(() =>
+  Boolean(tab.value?.url && /\{\{.+?\}\}/.test(tab.value.url)),
+);
+
+const resolvedUrlPreview = computed(() => {
+  if (!tab.value?.url) return '';
+  return resolveVariables(tab.value.url.trim(), effectiveVariablesMap.value);
+});
+
+const hasUnresolvedUrlVars = computed(() =>
+  /\{\{.+?\}\}/.test(resolvedUrlPreview.value),
+);
+
+interface UrlSegment {
+  text: string;
+  isVar: boolean;
+  key: string;
+  value: string;
+  found: boolean;
+  isDynamic: boolean;
 }
 
-function openEnvDialog() {
-  if (!ws.isAuthenticated) {
-    authDialogVisible.value = true;
-    return;
-  }
-  if (ws.environments.length) {
-    selectEnvForEdit(ws.activeEnvId || ws.environments[0].id);
+const urlSegments = computed<UrlSegment[]>(() => {
+  const url = tab.value?.url ?? '';
+  if (!url) return [];
+  const parts = url.split(/(\{\{\s*\$?[a-zA-Z0-9_.-]+\s*\}\})/g);
+  return parts
+    .filter((p) => p.length > 0)
+    .map((part) => {
+      const m = part.match(/^\{\{\s*(\$?[a-zA-Z0-9_.-]+)\s*\}\}$/);
+      if (!m) {
+        return {
+          text: part,
+          isVar: false,
+          key: '',
+          value: '',
+          found: false,
+          isDynamic: false,
+        };
+      }
+      const key = m[1];
+      const hasStatic = Object.prototype.hasOwnProperty.call(
+        effectiveVariablesMap.value,
+        key,
+      );
+      if (hasStatic) {
+        return {
+          text: part,
+          isVar: true,
+          key,
+          value: effectiveVariablesMap.value[key],
+          found: true,
+          isDynamic: false,
+        };
+      }
+      if (key.startsWith('$')) {
+        const dynVal = resolveDynamicVariable(key);
+        if (dynVal !== undefined) {
+          return {
+            text: part,
+            isVar: true,
+            key,
+            value: `${dynVal} (dynamic)`,
+            found: true,
+            isDynamic: true,
+          };
+        }
+      }
+      return {
+        text: part,
+        isVar: true,
+        key,
+        value: '',
+        found: false,
+        isDynamic: false,
+      };
+    });
+});
+
+function focusUrlInput() {
+  urlFocused.value = true;
+  nextTick(() => {
+    urlInputRef.value?.focus?.();
+  });
+}
+
+function openInlineVarEdit(key: string) {
+  editingVarKey.value = key;
+  editingVarValue.value = effectiveVariablesMap.value[key] ?? '';
+}
+
+async function saveInlineVarEdit() {
+  const key = editingVarKey.value?.trim();
+  if (!key) return;
+  const val = editingVarValue.value;
+
+  const activeEnv = ws.environments.find((e) => e.id === ws.activeEnvId);
+  if (activeEnv) {
+    const nextVars = activeEnv.variables.map((v) => ({ ...v }));
+    const existing = nextVars.find((v) => v.key.trim() === key);
+    if (existing) {
+      existing.value = val;
+      existing.enabled = true;
+    } else {
+      nextVars.push({
+        id: Math.random().toString(36).slice(2, 10),
+        key,
+        value: val,
+        isSecret: false,
+        enabled: true,
+      });
+    }
+    await ws.updateEnvironment(activeEnv.id, { variables: nextVars });
   } else {
-    editingEnvId.value = '';
-    editingEnvVars.value = [];
+    const existingVault = consoleStore.localVault.find(
+      (v) => v.key.trim() === key,
+    );
+    if (existingVault) {
+      existingVault.value = val;
+      existingVault.enabled = true;
+    } else {
+      consoleStore.localVault.push({
+        id: Math.random().toString(36).slice(2, 10),
+        key,
+        value: val,
+        isSecret: false,
+        enabled: true,
+      });
+    }
+    store.runtimeEnvOverrides = {
+      ...store.runtimeEnvOverrides,
+      [key]: val,
+    };
   }
+
+  editingVarKey.value = null;
+  ElMessage.success(`Updated {{${key}}}`);
+}
+
+async function openEnvDialog(envId?: string) {
+  if (ws.isAuthenticated && ws.activeWorkspaceId && !ws.environments.length) {
+    try {
+      await ws.loadWorkspaceData(ws.activeWorkspaceId);
+    } catch {
+      // ignore
+    }
+  }
+  envDialogInitialId.value = envId;
   envDialogVisible.value = true;
-}
-
-function selectEnvForEdit(envId: string) {
-  editingEnvId.value = envId;
-  const found = ws.environments.find((e) => e.id === envId);
-  editingEnvVars.value = found
-    ? found.variables.map((v) => ({ ...v }))
-    : [];
-}
-
-async function handleCreateEnv() {
-  if (!newEnvName.value.trim()) return;
-  await ws.createEnvironment(newEnvName.value, []);
-  newEnvName.value = '';
-  if (ws.activeEnvId) selectEnvForEdit(ws.activeEnvId);
-}
-
-function addEnvVarRow() {
-  editingEnvVars.value.push({
-    id: Math.random().toString(36).slice(2, 10),
-    key: '',
-    value: '',
-    isSecret: false,
-    enabled: true,
-  });
-}
-
-async function saveEnvVars() {
-  if (!editingEnvId.value) return;
-  await ws.updateEnvironment(editingEnvId.value, {
-    variables: editingEnvVars.value,
-  });
-  ElMessage.success('Environment variables saved');
 }
 </script>
 
 <template>
-  <el-container class="app-shell">
+  <div
+    v-if="publicDocsData"
+    style="min-height: 100vh; padding: 32px; max-width: 960px; margin: 0 auto; background: var(--ao-bg); color: var(--ao-text)"
+  >
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px">
+      <h1 style="margin: 0">{{ publicDocsData.name }} — API Documentation</h1>
+      <el-button size="small" @click="publicDocsData = null">Open App</el-button>
+    </div>
+    <div
+      v-for="req in publicDocsData.requests"
+      :key="req.id"
+      style="padding: 12px 16px; border: 1px solid var(--ao-border); border-radius: 8px; margin-bottom: 10px; background: var(--ao-surface)"
+    >
+      <div style="display: flex; align-items: center; gap: 10px">
+        <span class="method-badge" :class="`method-${req.method}`">{{ req.method }}</span>
+        <strong>{{ req.name }}</strong>
+        <code>{{ req.url }}</code>
+      </div>
+    </div>
+    <div v-for="fld in publicDocsData.folders" :key="fld.id" style="margin-top: 20px">
+      <h3>{{ fld.name }}</h3>
+      <div
+        v-for="req in fld.requests"
+        :key="req.id"
+        style="padding: 12px 16px; border: 1px solid var(--ao-border); border-radius: 8px; margin-bottom: 10px; background: var(--ao-surface)"
+      >
+        <div style="display: flex; align-items: center; gap: 10px">
+          <span class="method-badge" :class="`method-${req.method}`">{{ req.method }}</span>
+          <strong>{{ req.name }}</strong>
+          <code>{{ req.url }}</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <el-container v-else class="app-shell">
     <div
       class="shell-content"
       :class="{ 'navbar-bottom': settings.navbarPosition === 'bottom' }"
     >
-    <el-header height="auto" class="top-bar">
-      <div class="top-left">
-        <el-button
-          class="mobile-menu-btn"
-          :icon="Menu"
-          circle
-          size="small"
-          @click="mobileSidebarVisible = true"
-        />
-        <div class="brand">
-          <img
-            :src="
-              settings.effectiveTheme === 'dark'
-                ? '/API-OPEN-FULL.png'
-                : '/API-OPEN-FULL-HITAM.png'
-            "
-            alt="Api-Open"
-            class="brand-full-logo"
-          />
-        </div>
-        <el-dropdown trigger="click">
-          <el-button size="small" text :icon="House" title="Navigation Menu">
-            Home
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item @click="overviewDialogVisible = true">
-                Home / Workspace Overview
-              </el-dropdown-item>
-              <el-dropdown-item
-                @click="ws.isAuthenticated ? (teamDialogVisible = true) : (authDialogVisible = true)"
-              >
-                Workspaces &amp; Team
-              </el-dropdown-item>
-              <el-dropdown-item @click="openSearchPalette">
-                API Catalog (Ctrl+K)
-              </el-dropdown-item>
-              <el-dropdown-item divided @click="variablesDrawerVisible = true">
-                Variables &amp; Local Vault
-              </el-dropdown-item>
-              <el-dropdown-item @click="consoleDrawerVisible = true">
-                Reports &amp; Console
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-        <el-radio-group v-model="clientProtocol" size="small">
-          <el-radio-button value="http">HTTP</el-radio-button>
-          <el-radio-button value="graphql">GraphQL</el-radio-button>
-          <el-radio-button value="ws">WS</el-radio-button>
-          <el-radio-button value="sse">SSE</el-radio-button>
-        </el-radio-group>
-      </div>
-
-      <button
-        type="button"
-        class="top-search-bar"
-        title="Search API (Ctrl+K)"
-        @click="openSearchPalette"
-      >
-        <el-icon><Search /></el-icon>
-        <span class="top-search-placeholder">Search API...</span>
-        <kbd class="kbd-key">Ctrl+K</kbd>
-      </button>
-
-      <div class="top-actions">
-        <template v-if="ws.isAuthenticated">
-          <el-select
-            v-model="ws.activeWorkspaceId"
-            size="small"
-            class="top-select"
-            @change="(id: string) => ws.loadWorkspaceData(id)"
-          >
-            <el-option
-              v-for="w in ws.workspaces"
-              :key="w.id"
-              :label="w.name"
-              :value="w.id"
-            />
-          </el-select>
-
-          <el-select
-            v-model="ws.activeEnvId"
-            size="small"
-            clearable
-            placeholder="No Env"
-            class="top-select"
-          >
-            <el-option
-              v-for="env in ws.environments"
-              :key="env.id"
-              :label="env.name"
-              :value="env.id"
-            />
-          </el-select>
-        </template>
-
-        <el-button
-          size="small"
-          circle
-          :icon="settings.effectiveTheme === 'dark' ? Sunny : Moon"
-          title="Toggle Dark / Light Mode"
-          @click="settings.toggleTheme"
-        />
-        <el-popover placement="bottom-end" :width="340" trigger="click">
-          <template #reference>
-            <el-badge
-              :value="consoleStore.logs.length"
-              :hidden="!consoleStore.logs.length"
-              :max="99"
-            >
-              <el-button
-                size="small"
-                circle
-                :icon="Bell"
-                title="Notifications & Activity"
-              />
-            </el-badge>
-          </template>
-          <div class="notif-header">
-            <span style="font-weight: 600">Notifications</span>
-            <el-button
-              v-if="consoleStore.logs.length"
-              size="small"
-              link
-              type="danger"
-              @click="consoleStore.clearLogs"
-            >
-              Clear
-            </el-button>
-          </div>
-          <el-radio-group v-model="notifTab" size="small" style="margin-bottom: 10px">
-            <el-radio-button value="all">All</el-radio-button>
-            <el-radio-button value="activity">Activity</el-radio-button>
-            <el-radio-button value="error">Errors</el-radio-button>
-          </el-radio-group>
-          <div v-if="filteredNotifications.length" class="notif-list">
-            <div
-              v-for="item in filteredNotifications"
-              :key="item.id"
-              class="notif-item"
-            >
-              <div style="display: flex; justify-content: space-between; gap: 6px">
-                <el-tag
-                  size="small"
-                  :type="item.type === 'error' ? 'danger' : item.type === 'http' ? 'success' : 'info'"
-                >
-                  {{ item.type.toUpperCase() }}
-                </el-tag>
-                <span style="font-size: 11px; opacity: 0.6">{{ item.timestamp.slice(11, 19) }}</span>
-              </div>
-              <div class="notif-msg">{{ item.message }}</div>
-            </div>
-          </div>
-          <el-empty v-else description="No notifications" :image-size="42" />
-        </el-popover>
-
-        <el-dropdown trigger="click">
-          <el-button
-            size="small"
-            circle
-            :icon="Setting"
-            title="Settings & Help"
-          />
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item @click="openSettings('layout')">
-                App settings
-              </el-dropdown-item>
-              <el-dropdown-item @click="overviewDialogVisible = true">
-                Workspace settings &amp; overview
-              </el-dropdown-item>
-              <el-dropdown-item v-if="ws.isAuthenticated" @click="teamDialogVisible = true">
-                Team settings
-              </el-dropdown-item>
-              <el-dropdown-item v-if="ws.isAuthenticated" @click="openSettings('profile')">
-                Account settings
-              </el-dropdown-item>
-              <el-dropdown-item divided @click="supportDialogVisible = true">
-                Help &amp; Support
-              </el-dropdown-item>
-              <el-dropdown-item @click="shortcutsDialogVisible = true">
-                Keyboard shortcuts (Ctrl+/)
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-
-        <el-dropdown trigger="click">
-          <el-button size="small" circle :icon="MoreFilled" title="Tools & Actions" />
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item @click="curlDialogVisible = true">
-                Import cURL (Ctrl+I)
-              </el-dropdown-item>
-              <el-dropdown-item @click="snippetDialogVisible = true">
-                Generate Code Snippet
-              </el-dropdown-item>
-              <el-dropdown-item v-if="ws.isAuthenticated" divided @click="openEnvDialog">
-                Manage Environments
-              </el-dropdown-item>
-              <el-dropdown-item v-if="ws.isAuthenticated" @click="teamDialogVisible = true">
-                Team & Members
-              </el-dropdown-item>
-              <el-dropdown-item divided @click="shortcutsDialogVisible = true">
-                Keyboard Shortcuts (Ctrl+/)
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-
-        <template v-if="ws.isAuthenticated">
-          <el-dropdown>
-            <el-button size="small" plain class="user-btn">
-              <el-avatar
-                :size="20"
-                :src="ws.profile?.avatarUrl || undefined"
-                style="margin-right: 6px; flex-shrink: 0"
-              >
-                {{ (ws.profile?.name || ws.user?.email || 'U').slice(0, 1).toUpperCase() }}
-              </el-avatar>
-              <span class="user-name-text">{{ ws.profile?.name || ws.user?.email }}</span>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item disabled>
-                  <div style="line-height: 1.3">
-                    <div style="font-weight: 600">{{ ws.profile?.name || 'User' }}</div>
-                    <div style="font-size: 11px; opacity: 0.7">{{ ws.user?.email }}</div>
-                  </div>
-                </el-dropdown-item>
-                <el-dropdown-item divided @click="openSettings('profile')">
-                  Profile &amp; Settings
-                </el-dropdown-item>
-                <el-dropdown-item @click="variablesDrawerVisible = true">
-                  Local Vault &amp; Keys
-                </el-dropdown-item>
-                <el-dropdown-item @click="consoleDrawerVisible = true">
-                  Audit &amp; Console Logs
-                </el-dropdown-item>
-                <el-dropdown-item divided @click="ws.signOut()">
-                  Sign Out
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </template>
-
-        <template v-else>
-          <el-button type="primary" size="small" @click="authDialogVisible = true">
-            Sign In
-          </el-button>
-        </template>
-      </div>
-    </el-header>
-
-    <el-container
-      class="main-body"
-      :class="`sidebar-pos-${settings.sidebarPosition}`"
-    >
-      <el-aside
-        v-show="!settings.sidebarHidden"
-        :width="isSidebarVertical ? '100%' : `${settings.sidebarWidth}px`"
-        :style="isSidebarVertical ? { height: `${settings.sidebarHeight}px` } : {}"
-        class="sidebar desktop-sidebar"
-      >
-        <el-tabs v-model="sidebarTab" stretch>
-          <el-tab-pane label="Collections" name="collections">
-            <template v-if="ws.isAuthenticated">
-              <div class="sidebar-toolbar">
-                <el-text size="small" type="info">Collections</el-text>
-                <div style="display: flex; gap: 4px; align-items: center">
-                  <el-dropdown trigger="click">
-                    <el-button size="small" :icon="Upload" link type="primary">
-                      Import
-                    </el-button>
-                    <template #dropdown>
-                      <el-dropdown-menu>
-                        <el-dropdown-item @click="triggerPostmanImport">
-                          Postman v2.1 (.json)
-                        </el-dropdown-item>
-                        <el-dropdown-item @click="triggerOpenApiImport">
-                          OpenAPI / Swagger (.json)
-                        </el-dropdown-item>
-                      </el-dropdown-menu>
-                    </template>
-                  </el-dropdown>
-                  <el-button
-                    size="small"
-                    :icon="Download"
-                    link
-                    type="primary"
-                    title="Export All Collections"
-                    @click="exportAllCollections"
-                  >
-                    Export
-                  </el-button>
-                  <el-button
-                    size="small"
-                    :icon="Plus"
-                    link
-                    type="primary"
-                    @click="newCollectionVisible = true"
-                  >
-                    New
-                  </el-button>
-                </div>
-                <input
-                  ref="postmanFileInput"
-                  type="file"
-                  accept=".json,application/json"
-                  style="display: none"
-                  @change="handlePostmanFileSelected"
-                />
-                <input
-                  ref="openApiFileInput"
-                  type="file"
-                  accept=".json,application/json"
-                  style="display: none"
-                  @change="handleOpenApiFileSelected"
-                />
-              </div>
-              <el-empty
-                v-if="!ws.collectionTree.length"
-                description="No collections yet"
-                :image-size="54"
-              />
-              <el-tree
-                v-else
-                :data="ws.collectionTree"
-                node-key="id"
-                default-expand-all
-                @node-click="handleTreeNodeClick"
-              >
-                <template #default="{ data }">
-                  <div class="tree-row">
-                    <span class="tree-label">
-                      <el-icon v-if="data.kind === 'collection'"><Folder /></el-icon>
-                      <span
-                        v-else
-                        class="method-badge"
-                        :class="`method-${data.request?.method}`"
-                      >
-                        {{ data.request?.method }}
-                      </span>
-                      <span class="tree-text">{{ data.label }}</span>
-                    </span>
-                    <span class="tree-actions">
-                      <el-button
-                        v-if="data.kind === 'collection'"
-                        :icon="VideoPlay"
-                        link
-                        type="success"
-                        size="small"
-                        title="Run Collection"
-                        @click.stop="openRunner(data)"
-                      />
-                      <el-button
-                        v-if="data.kind === 'collection'"
-                        :icon="Document"
-                        link
-                        size="small"
-                        title="View API Docs"
-                        @click.stop="openDocsModal(data)"
-                      />
-                      <el-button
-                        v-if="data.kind === 'collection'"
-                        :icon="Download"
-                        link
-                        size="small"
-                        title="Export Postman JSON"
-                        @click.stop="handleExportCollection(data)"
-                      />
-                      <el-button
-                        :icon="Delete"
-                        link
-                        type="danger"
-                        size="small"
-                        @click.stop="handleTreeDelete(data)"
-                      />
-                    </span>
-                  </div>
-                </template>
-              </el-tree>
-
-              <el-collapse v-model="sidebarSections" class="sidebar-sections">
-                <el-collapse-item title="ENVIRONMENTS" name="environments">
-                  <div v-if="ws.environments.length" class="sidebar-section-list">
-                    <button
-                      v-for="env in ws.environments"
-                      :key="env.id"
-                      type="button"
-                      class="sidebar-section-item"
-                      :class="{ active: ws.activeEnvId === env.id }"
-                      @click="ws.activeEnvId = env.id"
-                    >
-                      <span>{{ env.name }}</span>
-                      <span class="sidebar-item-meta">{{ env.variables.length }} vars</span>
-                    </button>
-                  </div>
-                  <el-text v-else size="small" type="info">
-                    No environments yet
-                  </el-text>
-                  <div style="margin-top: 6px">
-                    <el-button size="small" :icon="Plus" @click="openEnvDialog">
-                      Manage
-                    </el-button>
-                  </div>
-                </el-collapse-item>
-
-                <el-collapse-item title="DOCUMENTS" name="documents">
-                  <el-text size="small" type="info">
-                    {{ workspaceSummary || 'No workspace summary yet.' }}
-                  </el-text>
-                  <div style="margin-top: 6px">
-                    <el-button size="small" :icon="Document" @click="overviewDialogVisible = true">
-                      Edit README
-                    </el-button>
-                  </div>
-                </el-collapse-item>
-
-                <el-collapse-item title="SPECS" name="specs">
-                  <el-text size="small" type="info">
-                    Import OpenAPI / Swagger JSON into Collections
-                  </el-text>
-                  <div style="margin-top: 6px">
-                    <el-button size="small" :icon="Upload" @click="triggerOpenApiImport">
-                      Import Spec
-                    </el-button>
-                  </div>
-                </el-collapse-item>
-
-                <el-collapse-item title="LOCAL VAULT" name="vault">
-                  <el-text size="small" type="info">
-                    {{ consoleStore.localVault.length }} secret(s) stored locally
-                  </el-text>
-                  <div style="margin-top: 6px">
-                    <el-button size="small" :icon="Key" @click="variablesDrawerVisible = true">
-                      Open Vault
-                    </el-button>
-                  </div>
-                </el-collapse-item>
-              </el-collapse>
-            </template>
-            <el-empty
-              v-else
-              description="Sign in to sync collections"
-              :image-size="54"
-            >
-              <el-button type="primary" size="small" @click="authDialogVisible = true">
-                Sign In
-              </el-button>
-            </el-empty>
-          </el-tab-pane>
-
-          <el-tab-pane label="History" name="history">
-            <div class="sidebar-toolbar">
-              <el-text size="small" type="info">Recent requests</el-text>
-              <el-button
-                v-if="store.history.length"
-                link
-                type="danger"
-                size="small"
-                :icon="Delete"
-                @click="store.clearHistory"
-              >
-                Clear
-              </el-button>
-            </div>
-            <el-empty
-              v-if="!store.history.length"
-              description="No history yet"
-              :image-size="54"
-            />
-            <div v-else class="history-list">
-              <div
-                v-for="item in store.history"
-                :key="item.id"
-                class="history-item"
-                @click="store.addTab({ method: item.method, url: item.url, name: item.url })"
-              >
-                <span
-                  class="method-badge"
-                  :class="`method-${item.method}`"
-                >
-                  {{ item.method }}
-                </span>
-                <span class="history-url" :title="item.url">{{ item.url }}</span>
-                <span
-                  v-if="item.statusCode"
-                  class="status-badge"
-                  :class="statusClass(item.statusCode)"
-                  style="margin-left: auto; font-size: 11px; padding: 1px 6px"
-                >
-                  {{ item.statusCode }}
-                </span>
-              </div>
-            </div>
-          </el-tab-pane>
-        </el-tabs>
-      </el-aside>
-
-      <div
-        v-show="!settings.sidebarHidden"
-        class="sidebar-resizer desktop-sidebar"
-        :class="{ 'is-horizontal': isSidebarVertical }"
-        title="Drag to resize sidebar"
-        @mousedown="startSidebarResize"
+      <TopHeaderBar
+        v-model:protocol="clientProtocol"
+        @open-mobile-sidebar="mobileSidebarVisible = true"
+        @open-search="searchDialogVisible = true"
+        @open-download-app="downloadAppDialogVisible = true"
+        @open-env-dialog="openEnvDialog"
+        @open-settings="openSettings"
+        @open-overview="openOverviewTab"
+        @open-team="teamDialogVisible = true"
+        @open-set-password="setPasswordDialogVisible = true"
+        @open-variables="variablesDrawerVisible = true"
+        @open-console="consoleDrawerVisible = true"
+        @open-auth="authDialogVisible = true"
       />
 
-      <el-main class="workspace" v-if="tab">
-        <RealtimePanel
-          v-if="clientProtocol === 'ws' || clientProtocol === 'sse'"
-          :key="clientProtocol"
-          :protocol="clientProtocol"
+      <el-container
+        class="main-body"
+        :class="`sidebar-pos-${settings.sidebarPosition}`"
+      >
+        <WorkspaceSidebar
+          ref="sidebarRef"
+          :workspace-summary="workspaceSummary"
+          @open-curl="curlDialogVisible = true"
+          @share-request="shareActiveRequest"
+          @open-snippet="snippetDialogVisible = true"
+          @export-all="exportAllCollections"
+          @export-all-format="handleExportAllFormat"
+          @open-new-collection="newCollectionVisible = true"
+          @open-runner="openRunner"
+          @open-docs="openDocsModal"
+          @export-collection="handleExportCollection"
+          @export-openapi="handleExportOpenApi"
+          @export-format="handleExportFormat"
+          @open-collection-settings="openCollectionSettings"
+          @open-snapshots="openSnapshots"
+          @open-spec-viewer="specViewerVisible = true"
+          @open-monitors="monitorsVisible = true"
+          @open-flows="flowsVisible = true"
+          @open-db-client="dbClientVisible = true"
+          @open-schemas="schemasVisible = true"
+          @open-proxy-recorder="proxyRecorderVisible = true"
+          @open-git-sync="gitSyncVisible = true"
+          @open-env-dialog="openEnvDialog()"
+          @open-overview="openOverviewTab"
+          @open-variables="variablesDrawerVisible = true"
+          @open-auth="authDialogVisible = true"
+          @open-toolbox="toolboxVisible = true"
+          @open-webhook-bin="webhookBinVisible = true"
+          @open-trash="trashVisible = true"
+          @open-marketplace="marketplaceVisible = true"
         />
 
-        <template v-else>
-        <div class="workspace-tab-header">
-          <button
-            type="button"
-            class="overview-pill-btn"
-            :class="{ active: overviewTabActive }"
-            title="Workspace Overview"
-            @click="openOverviewTab"
-          >
-            <el-icon><House /></el-icon>
-            <span>Overview</span>
-          </button>
-
-          <el-tabs
-            v-model="store.activeTabId"
-            type="card"
-            editable
-            @edit="handleTabEdit"
-            @tab-click="overviewTabActive = false"
-            class="request-doc-tabs"
-          >
-            <el-tab-pane
-              v-for="t in store.tabs"
-              :key="t.id"
-              :name="t.id"
-            >
-              <template #label>
-                <span style="display: inline-flex; align-items: center; gap: 6px">
-                  <span class="method-badge" :class="`method-${t.method}`">
-                    {{ t.method }}
-                  </span>
-                  <span>
-                    {{
-                      t.savedRequestId
-                        ? t.name
-                        : t.url
-                          ? t.url.replace(/^https?:\/\//, '').slice(0, 20)
-                          : t.name
-                    }}
-                  </span>
-                </span>
-              </template>
-            </el-tab-pane>
-          </el-tabs>
-
-          <div class="workspace-tab-right">
-            <el-select
-              v-if="ws.isAuthenticated"
-              v-model="ws.activeEnvId"
-              size="small"
-              clearable
-              placeholder="No Environment"
-              class="tab-env-select"
-            >
-              <el-option
-                v-for="env in ws.environments"
-                :key="env.id"
-                :label="env.name"
-                :value="env.id"
-              />
-            </el-select>
-            <el-button
-              size="small"
-              text
-              :icon="Key"
-              title="All Variables & Local Vault"
-              @click="variablesDrawerVisible = true"
-            />
-          </div>
-        </div>
-
-        <div v-if="overviewTabActive" class="workspace-overview-page">
-          <div class="overview-page-header">
-            <div>
-              <h2 class="overview-title">
-                {{ ws.workspaces.find((w) => w.id === ws.activeWorkspaceId)?.name ?? 'Personal Workspace' }}
-              </h2>
-              <div class="overview-meta">
-                <span>{{ ws.profile?.name || ws.user?.email || 'Local User' }}</span>
-                <span>•</span>
-                <span>{{ ws.collectionTree.length }} collection(s)</span>
-                <span>•</span>
-                <span>{{ ws.environments.length }} environment(s)</span>
-              </div>
-            </div>
-            <div style="display: flex; gap: 8px; align-items: center">
-              <el-button size="small" :icon="Download" @click="exportAllCollections">
-                Export Collections
-              </el-button>
-              <el-button
-                size="small"
-                type="primary"
-                plain
-                :icon="Plus"
-                @click="store.addTab(); overviewTabActive = false"
-              >
-                New Request
-              </el-button>
-            </div>
-          </div>
-
-          <el-input
-            v-model="workspaceSummary"
-            size="small"
-            placeholder="Add a short summary for this workspace..."
-            class="overview-summary-input"
+        <el-main v-if="tab" class="workspace">
+          <RealtimePanel
+            v-if="clientProtocol === 'ws' || clientProtocol === 'sse'"
+            :key="`${store.activeTabId}-${clientProtocol}`"
+            :protocol="clientProtocol"
           />
 
-          <el-tabs v-model="overviewSubTab" class="overview-subtabs">
-            <el-tab-pane label="Docs" name="docs">
-              <div class="overview-docs-section">
-                <div class="overview-section-label">Workspace README</div>
-                <el-input
-                  v-model="workspaceReadme"
-                  type="textarea"
-                  :rows="7"
-                  placeholder="Write workspace documentation, base URLs, auth notes, or onboarding instructions (saved locally)..."
-                />
-              </div>
-              <div class="overview-docs-section" style="margin-top: 16px">
-                <div class="overview-section-label">Collections in Workspace</div>
-                <div v-if="ws.collectionTree.length" class="overview-collections-grid">
-                  <div
-                    v-for="col in ws.collectionTree"
-                    :key="col.id"
-                    class="overview-collection-card"
-                  >
-                    <div style="display: flex; align-items: center; gap: 8px">
-                      <el-icon><Folder /></el-icon>
-                      <span style="font-weight: 600">{{ col.label }}</span>
-                    </div>
-                    <div style="display: flex; gap: 4px">
-                      <el-button size="small" link type="success" @click="openRunner(col)">
-                        Run
-                      </el-button>
-                      <el-button size="small" link @click="openDocsModal(col)">
-                        Docs
-                      </el-button>
-                      <el-button size="small" link @click="handleExportCollection(col)">
-                        Export
-                      </el-button>
-                    </div>
-                  </div>
-                </div>
-                <el-empty v-else description="No collections in this workspace yet" :image-size="48" />
-              </div>
-            </el-tab-pane>
+          <div v-else class="workspace-http-wrap">
+            <div class="workspace-tab-header">
+              <button
+                type="button"
+                class="overview-pill-btn"
+                :class="{ active: overviewTabActive }"
+                title="Workspace Overview"
+                @click="openOverviewTab"
+              >
+                <el-icon><House /></el-icon>
+                <span>Overview</span>
+              </button>
 
-            <el-tab-pane label="Updates" name="updates">
-              <div v-if="consoleStore.logs.length" class="overview-updates-list">
-                <div
-                  v-for="entry in consoleStore.logs"
-                  :key="entry.id"
-                  class="overview-update-row"
+              <el-tabs
+                v-model="store.activeTabId"
+                type="card"
+                editable
+                class="request-doc-tabs"
+                :class="{ 'overview-is-active': overviewTabActive }"
+                @edit="handleTabEdit"
+                @tab-click="overviewTabActive = false"
+              >
+                <el-tab-pane
+                  v-for="t in store.tabs"
+                  :key="t.id"
+                  :name="t.id"
                 >
-                  <div style="display: flex; align-items: center; gap: 8px">
-                    <el-tag
-                      size="small"
-                      :type="entry.type === 'error' ? 'danger' : entry.type === 'http' ? 'success' : 'info'"
+                  <template #label>
+                    <span
+                      style="
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                      "
                     >
-                      {{ entry.type.toUpperCase() }}
-                    </el-tag>
-                    <span>{{ entry.message }}</span>
-                  </div>
-                  <span style="font-size: 11px; opacity: 0.6; white-space: nowrap">
-                    {{ entry.timestamp.slice(11, 19) }}
-                  </span>
-                </div>
-              </div>
-              <el-empty v-else description="No recent updates or activity" :image-size="48" />
-            </el-tab-pane>
+                      <span class="method-badge" :class="`method-${t.method}`">
+                        {{ t.method }}
+                      </span>
+                      <span>
+                        {{
+                          t.savedRequestId
+                            ? t.name
+                            : t.url
+                              ? t.url.replace(/^https?:\/\//, '').slice(0, 20)
+                              : t.name
+                        }}
+                      </span>
+                    </span>
+                  </template>
+                </el-tab-pane>
+              </el-tabs>
 
-            <el-tab-pane label="Settings" name="settings">
-              <div style="display: flex; flex-wrap: wrap; gap: 10px; padding-top: 4px">
-                <el-button :icon="Collection" @click="openEnvDialog">
-                  Manage Environments
-                </el-button>
-                <el-button :icon="Key" @click="variablesDrawerVisible = true">
-                  Local Vault &amp; All Variables
-                </el-button>
-                <el-button v-if="ws.isAuthenticated" @click="teamDialogVisible = true">
-                  Team &amp; Members
-                </el-button>
-                <el-button type="primary" plain :icon="Download" @click="exportAllCollections">
-                  Export All Collections
-                </el-button>
-              </div>
-            </el-tab-pane>
-          </el-tabs>
-        </div>
-
-        <template v-else>
-        <div class="request-bar">
-          <el-select
-            v-model="tab.method"
-            class="method-select"
-            :class="`method-select-${tab.method}`"
-          >
-            <template #label="{ value }">
-              <span :class="`method-color-${value}`" style="font-weight: 700">
-                {{ value }}
-              </span>
-            </template>
-            <el-option v-for="m in methods" :key="m" :label="m" :value="m">
-              <span class="method-badge" :class="`method-${m}`">{{ m }}</span>
-            </el-option>
-          </el-select>
-          <el-input
-            ref="urlInputRef"
-            v-model="tab.url"
-            class="url-input"
-            placeholder="Enter URL (supports {{variable}} syntax)"
-            clearable
-            @input="handleUrlInput"
-            @keyup.ctrl.enter="store.sendActiveRequest"
-            @keyup.enter="store.sendActiveRequest"
-          />
-          <div class="request-bar-actions">
-            <el-button
-              type="primary"
-              :loading="tab.loading"
-              @click="store.sendActiveRequest"
-            >
-              Send
-            </el-button>
-            <el-button @click="handleSaveClick">Save</el-button>
-            <el-button :icon="Plus" @click="store.addTab()">New</el-button>
-          </div>
-        </div>
-
-        <div
-          ref="splitContainerRef"
-          class="request-response-split"
-          :class="`split-${settings.responsePosition}`"
-        >
-        <div class="request-pane">
-        <el-tabs v-model="activeRequestTab" class="request-tabs">
-          <el-tab-pane label="Params" name="params">
-            <KeyValueTable
-              :rows="tab.queryParams"
-              key-placeholder="Query param"
-              value-placeholder="Value"
-            />
-          </el-tab-pane>
-
-          <el-tab-pane label="Authorization" name="auth">
-            <el-form label-width="110px" size="small" style="max-width: 520px">
-              <el-form-item label="Auth Type">
-                <el-select
-                  :model-value="tab.auth.type"
-                  @update:model-value="
-                    (val: string) => {
-                      if (val === 'none') tab.auth = { type: 'none' };
-                      else if (val === 'bearer') tab.auth = { type: 'bearer', token: '' };
-                      else if (val === 'basic')
-                        tab.auth = { type: 'basic', username: '', password: '' };
-                      else if (val === 'digest')
-                        tab.auth = { type: 'digest', username: '', password: '' };
-                      else if (val === 'oauth2')
-                        tab.auth = {
-                          type: 'oauth2',
-                          accessToken: '',
-                          tokenUrl: '',
-                          clientId: '',
-                          clientSecret: '',
-                          scope: '',
-                          headerPrefix: 'Bearer',
-                        };
-                      else if (val === 'apikey')
-                        tab.auth = { type: 'apikey', key: '', value: '', addTo: 'header' };
-                      else if (val === 'aws')
-                        tab.auth = {
-                          type: 'aws',
-                          accessKey: '',
-                          secretKey: '',
-                          region: 'us-east-1',
-                          service: 'execute-api',
-                          sessionToken: '',
-                        };
-                      else if (val === 'hawk')
-                        tab.auth = { type: 'hawk', hawkId: '', hawkKey: '', algorithm: 'sha256' };
-                      else if (val === 'jwt')
-                        tab.auth = {
-                          type: 'jwt',
-                          secret: '',
-                          algorithm: 'HS256',
-                          payload: '{\n  &quot;sub&quot;: &quot;1234567890&quot;\n}',
-                          headerPrefix: 'Bearer',
-                        };
-                    }
-                  "
-                >
-                  <el-option label="No Auth" value="none" />
-                  <el-option label="Bearer Token" value="bearer" />
-                  <el-option label="Basic Auth" value="basic" />
-                  <el-option label="Digest Auth" value="digest" />
-                  <el-option label="OAuth 2.0" value="oauth2" />
-                  <el-option label="API Key" value="apikey" />
-                  <el-option label="AWS Signature" value="aws" />
-                  <el-option label="HAWK" value="hawk" />
-                  <el-option label="JWT" value="jwt" />
-                </el-select>
-              </el-form-item>
-
-              <template v-if="tab.auth.type === 'bearer'">
-                <el-form-item label="Token">
-                  <el-input v-model="tab.auth.token" placeholder="Bearer token" show-password />
-                </el-form-item>
-              </template>
-
-              <template v-if="tab.auth.type === 'basic' || tab.auth.type === 'digest'">
-                <el-form-item label="Username">
-                  <el-input v-model="tab.auth.username" />
-                </el-form-item>
-                <el-form-item label="Password">
-                  <el-input v-model="tab.auth.password" show-password />
-                </el-form-item>
-              </template>
-
-              <template v-if="tab.auth.type === 'oauth2'">
-                <el-form-item label="Access Token">
-                  <el-input v-model="tab.auth.accessToken" placeholder="Access token" show-password />
-                </el-form-item>
-                <el-form-item label="Header Prefix">
-                  <el-input v-model="tab.auth.headerPrefix" placeholder="Bearer" />
-                </el-form-item>
-                <el-form-item label="Token URL">
-                  <el-input v-model="tab.auth.tokenUrl" placeholder="https://auth.example.com/oauth/token" />
-                </el-form-item>
-                <el-form-item label="Client ID">
-                  <el-input v-model="tab.auth.clientId" />
-                </el-form-item>
-                <el-form-item label="Client Secret">
-                  <el-input v-model="tab.auth.clientSecret" show-password />
-                </el-form-item>
-                <el-form-item label="Scope">
-                  <el-input v-model="tab.auth.scope" placeholder="read write" />
-                </el-form-item>
-                <el-form-item>
-                  <el-button size="small" type="primary" :loading="fetchingOAuthToken" @click="fetchOAuth2Token">
-                    Get New Access Token
-                  </el-button>
-                </el-form-item>
-              </template>
-
-              <template v-if="tab.auth.type === 'apikey'">
-                <el-form-item label="Key">
-                  <el-input v-model="tab.auth.key" placeholder="X-API-Key" />
-                </el-form-item>
-                <el-form-item label="Value">
-                  <el-input v-model="tab.auth.value" />
-                </el-form-item>
-                <el-form-item label="Add to">
-                  <el-radio-group v-model="tab.auth.addTo">
-                    <el-radio value="header">Header</el-radio>
-                    <el-radio value="query">Query Params</el-radio>
-                  </el-radio-group>
-                </el-form-item>
-              </template>
-
-              <template v-if="tab.auth.type === 'aws'">
-                <el-form-item label="Access Key">
-                  <el-input v-model="tab.auth.accessKey" />
-                </el-form-item>
-                <el-form-item label="Secret Key">
-                  <el-input v-model="tab.auth.secretKey" show-password />
-                </el-form-item>
-                <el-form-item label="AWS Region">
-                  <el-input v-model="tab.auth.region" placeholder="us-east-1" />
-                </el-form-item>
-                <el-form-item label="Service Name">
-                  <el-input v-model="tab.auth.service" placeholder="execute-api" />
-                </el-form-item>
-                <el-form-item label="Session Token">
-                  <el-input v-model="tab.auth.sessionToken" placeholder="Optional" show-password />
-                </el-form-item>
-              </template>
-
-              <template v-if="tab.auth.type === 'hawk'">
-                <el-form-item label="Hawk Auth ID">
-                  <el-input v-model="tab.auth.hawkId" />
-                </el-form-item>
-                <el-form-item label="Hawk Auth Key">
-                  <el-input v-model="tab.auth.hawkKey" show-password />
-                </el-form-item>
-                <el-form-item label="Algorithm">
-                  <el-select v-model="tab.auth.algorithm">
-                    <el-option label="sha256" value="sha256" />
-                    <el-option label="sha1" value="sha1" />
-                  </el-select>
-                </el-form-item>
-              </template>
-
-              <template v-if="tab.auth.type === 'jwt'">
-                <el-form-item label="Algorithm">
-                  <el-select v-model="tab.auth.algorithm">
-                    <el-option label="HS256" value="HS256" />
-                    <el-option label="HS512" value="HS512" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="Secret">
-                  <el-input v-model="tab.auth.secret" show-password />
-                </el-form-item>
-                <el-form-item label="Header Prefix">
-                  <el-input v-model="tab.auth.headerPrefix" placeholder="Bearer" />
-                </el-form-item>
-                <el-form-item label="Payload (JSON)">
-                  <el-input v-model="tab.auth.payload" type="textarea" :rows="4" class="code-area" />
-                </el-form-item>
-              </template>
-            </el-form>
-          </el-tab-pane>
-
-          <el-tab-pane label="Headers" name="headers">
-            <KeyValueTable
-              :rows="tab.headers"
-              key-placeholder="Header"
-              value-placeholder="Value"
-            />
-          </el-tab-pane>
-
-          <el-tab-pane label="Body" name="body">
-            <div class="body-controls">
-              <el-radio-group v-model="tab.body.mode" size="small">
-                <el-radio-button value="none">none</el-radio-button>
-                <el-radio-button value="form-data">form-data</el-radio-button>
-                <el-radio-button value="urlencoded">x-www-form-urlencoded</el-radio-button>
-                <el-radio-button value="raw">raw</el-radio-button>
-                <el-radio-button value="binary">binary</el-radio-button>
-                <el-radio-button value="graphql">GraphQL</el-radio-button>
-              </el-radio-group>
-
-              <template v-if="tab.body.mode === 'raw'">
-                <el-select v-model="tab.body.rawType" size="small" style="width: 100px">
-                  <el-option label="JSON" value="json" />
-                  <el-option label="Text" value="text" />
-                  <el-option label="XML" value="xml" />
-                  <el-option label="HTML" value="html" />
-                </el-select>
-                <el-button
-                  v-if="tab.body.rawType === 'json'"
+              <div class="workspace-tab-right">
+                <el-tag
+                  v-if="!ws.isOnline || ws.offlineQueue.length"
                   size="small"
-                  @click="formatJsonBody"
+                  :type="ws.isOnline ? 'warning' : 'danger'"
                 >
-                  Beautify JSON
+                  {{ ws.isOnline ? `Syncing (${ws.offlineQueue.length})` : 'Offline' }}
+                </el-tag>
+                <el-button
+                  size="small"
+                  :type="splitViewEnabled ? 'primary' : 'default'"
+                  plain
+                  title="Multi-Tab Split View (Side-by-Side)"
+                  @click="toggleSplitView"
+                >
+                  Split
                 </el-button>
-              </template>
-
-              <el-button
-                v-if="tab.body.mode === 'graphql'"
-                size="small"
-                :loading="gqlLoading"
-                @click="fetchGraphqlSchema"
-              >
-                Fetch Schema
-              </el-button>
-            </div>
-
-            <el-input
-              v-if="tab.body.mode === 'raw'"
-              v-model="tab.body.raw"
-              type="textarea"
-              :rows="7"
-              class="code-area"
-              placeholder="Request body..."
-            />
-
-            <div v-else-if="tab.body.mode === 'form-data'">
-              <el-table :data="tab.body.formData ?? []" size="small" border>
-                <el-table-column width="46" align="center">
-                  <template #default="{ row }">
-                    <el-checkbox v-model="row.enabled" />
-                  </template>
-                </el-table-column>
-                <el-table-column label="Key" width="180">
-                  <template #default="{ row }">
-                    <el-input v-model="row.key" size="small" placeholder="field" />
-                  </template>
-                </el-table-column>
-                <el-table-column label="Type" width="100">
-                  <template #default="{ row }">
-                    <el-select v-model="row.type" size="small">
-                      <el-option label="Text" value="text" />
-                      <el-option label="File" value="file" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="Value">
-                  <template #default="{ row }">
-                    <el-input
-                      v-if="row.type === 'text'"
-                      v-model="row.value"
-                      size="small"
-                      placeholder="Value"
-                    />
-                    <div v-else style="display: flex; align-items: center; gap: 8px">
-                      <input
-                        type="file"
-                        @change="(e: Event) => handleFormDataFileChange(row, e)"
-                      />
-                      <el-text v-if="row.fileName" size="small" type="info">
-                        {{ row.fileName }}
-                      </el-text>
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column width="54" align="center">
-                  <template #default="{ $index }">
-                    <el-button
-                      :icon="Delete"
-                      link
-                      type="danger"
-                      @click="tab.body.formData?.splice($index, 1)"
-                    />
-                  </template>
-                </el-table-column>
-              </el-table>
-              <el-button size="small" :icon="Plus" style="margin-top: 8px" @click="addFormDataRow">
-                Add Field
-              </el-button>
-            </div>
-
-            <div v-else-if="tab.body.mode === 'binary'" class="binary-box">
-              <input type="file" @change="handleBinaryFileChange" />
-              <el-text v-if="tab.body.binary?.fileName" type="info" size="small">
-                Selected: {{ tab.body.binary.fileName }} ({{ tab.body.binary.mimeType }})
-              </el-text>
-            </div>
-
-            <KeyValueTable
-              v-else-if="tab.body.mode === 'urlencoded' && tab.body.urlencoded"
-              :rows="tab.body.urlencoded"
-            />
-
-            <div v-else-if="tab.body.mode === 'graphql' && tab.body.graphql" class="gql-grid">
-              <el-input
-                v-model="tab.body.graphql.query"
-                type="textarea"
-                :rows="6"
-                placeholder="query { ... }"
-              />
-              <el-input
-                v-model="tab.body.graphql.variables"
-                type="textarea"
-                :rows="6"
-                placeholder='{ "id": 1 }'
-              />
-            </div>
-          </el-tab-pane>
-
-          <el-tab-pane label="Pre-request" name="preRequest">
-            <el-input
-              v-model="tab.preRequestScript"
-              type="textarea"
-              :rows="6"
-              class="code-area"
-              placeholder='// Runs before sending request&#10;// pm.environment.set("timestamp", Date.now());'
-            />
-          </el-tab-pane>
-
-          <el-tab-pane label="Tests" name="tests">
-            <div class="body-controls">
-              <el-text size="small" type="info">Snippets:</el-text>
-              <el-button size="small" @click="insertTestTemplate('status')">
-                Status 200
-              </el-button>
-              <el-button size="small" @click="insertTestTemplate('json')">
-                Has Property
-              </el-button>
-              <el-button size="small" @click="insertTestTemplate('env')">
-                Set Env Var
-              </el-button>
-            </div>
-            <el-input
-              v-model="tab.testScript"
-              type="textarea"
-              :rows="6"
-              class="code-area"
-              placeholder='pm.test("Status is 200", () => {&#10;  pm.expect(pm.response.code).to.equal(200);&#10;});'
-            />
-          </el-tab-pane>
-        </el-tabs>
-        </div>
-
-        <div
-          class="response-resizer"
-          :class="{ 'is-vertical': isResponseHorizontal }"
-          title="Drag to resize response panel"
-          @mousedown="startResponseResize"
-        />
-
-        <div
-          class="response-section kt-card kt-card-bordered"
-          :class="
-            tab.error
-              ? 'resp-accent-error'
-              : tab.response
-                ? `resp-accent-${statusClass(tab.response.statusCode)}`
-                : ''
-          "
-          :style="
-            isResponseHorizontal
-              ? { width: `${settings.responseSizePercent}%`, flex: 'none' }
-              : { height: `${settings.responseSizePercent}%`, flex: 'none' }
-          "
-        >
-          <div class="response-header">
-            <span>Response</span>
-            <div v-if="tab.response" class="response-meta">
-              <span class="status-badge" :class="statusClass(tab.response.statusCode)">
-                {{ tab.response.statusCode }} {{ tab.response.statusText }}
-              </span>
-              <span class="status-badge" :class="durationClass(tab.response.durationMs)">
-                {{ tab.response.durationMs }} ms
-              </span>
-              <span class="kt-badge kt-badge-sm kt-badge-outline kt-badge-secondary">
-                {{ formatBytes(tab.response.sizeBytes) }}
-              </span>
-              <el-button
-                size="small"
-                circle
-                :icon="CopyDocument"
-                title="Copy Response (Ctrl+.)"
-                @click="copyActiveResponse"
-              />
-              <el-button
-                size="small"
-                circle
-                :icon="Download"
-                title="Download Response (Ctrl+J)"
-                @click="downloadActiveResponse"
-              />
-            </div>
-            <div v-else-if="tab.error" class="response-meta">
-              <span class="status-badge status-5xx">Error</span>
-            </div>
-          </div>
-
-          <el-alert
-            v-if="tab.error"
-            :title="tab.error"
-            type="error"
-            show-icon
-            :closable="false"
-            style="margin-bottom: 8px"
-          />
-
-          <el-tabs v-model="activeResponseTab">
-            <el-tab-pane label="Body" name="body">
-              <template v-if="tab.response">
-                <div class="body-controls" v-if="!tab.response.isBase64">
-                  <el-radio-group v-model="responseViewMode" size="small">
-                    <el-radio-button value="pretty">Pretty</el-radio-button>
-                    <el-radio-button value="raw">Raw</el-radio-button>
-                  </el-radio-group>
-                </div>
-                <img
-                  v-if="isImageResponse"
-                  :src="imageDataUrl"
-                  alt="Response preview"
-                  class="image-preview"
-                />
-                <pre v-else class="response-pre">{{ formattedBody }}</pre>
-              </template>
-              <el-empty v-else description="Hit Send to get a response" :image-size="60">
-                <template #image>
-                  <img src="/API-OPEN-LOGO.png" alt="Api-Open" style="width: 56px; opacity: 0.75" />
-                </template>
-              </el-empty>
-            </el-tab-pane>
-
-            <el-tab-pane :label="`Headers (${responseHeadersList.length})`" name="headers">
-              <el-table :data="responseHeadersList" size="small" border>
-                <el-table-column prop="key" label="Header" width="240" />
-                <el-table-column prop="value" label="Value" />
-              </el-table>
-            </el-tab-pane>
-
-            <el-tab-pane :label="`Cookies (${responseCookiesList.length})`" name="cookies">
-              <el-table :data="responseCookiesList" size="small" border>
-                <el-table-column prop="name" label="Name" width="180" />
-                <el-table-column prop="value" label="Value" />
-                <el-table-column prop="attributes" label="Attributes" />
-              </el-table>
-            </el-tab-pane>
-
-            <el-tab-pane
-              :label="`Tests (${passedTestsCount}/${tab.testResults.length})`"
-              name="testResults"
-            >
-              <el-alert
-                v-if="tab.scriptError"
-                :title="tab.scriptError"
-                type="error"
-                show-icon
-                :closable="false"
-                style="margin-bottom: 8px"
-              />
-              <div v-if="tab.testResults.length" class="test-results-list">
-                <div
-                  v-for="(tr, idx) in tab.testResults"
-                  :key="idx"
-                  class="test-result-row"
+                <el-button
+                  size="small"
+                  plain
+                  :icon="Key"
+                  title="All Variables & Local Vault"
+                  @click="variablesDrawerVisible = true"
                 >
-                  <el-tag :type="tr.passed ? 'success' : 'danger'" size="small">
-                    {{ tr.passed ? 'PASS' : 'FAIL' }}
-                  </el-tag>
-                  <span>{{ tr.name }}</span>
-                  <el-text v-if="tr.error" type="danger" size="small">
-                    — {{ tr.error }}
-                  </el-text>
+                  Vars
+                </el-button>
+              </div>
+            </div>
+
+            <WorkspaceOverviewPane
+              v-if="overviewTabActive"
+              :summary="workspaceSummary"
+              :readme="workspaceReadme"
+              @update:summary="workspaceSummary = $event"
+              @update:readme="workspaceReadme = String($event)"
+              @close-overview="overviewTabActive = false"
+              @export-all="exportAllCollections"
+              @open-runner="openRunner"
+              @open-docs="openDocsModal"
+              @export-collection="handleExportCollection"
+              @open-envs="openEnvDialog()"
+              @open-vars="variablesDrawerVisible = true"
+              @open-team="teamDialogVisible = true"
+            />
+
+            <div v-else class="request-workspace-body">
+              <div class="request-bar">
+                <el-select
+                  v-model="tab.method"
+                  class="method-select"
+                  popper-class="method-select-popper"
+                  :class="`method-select-${tab.method}`"
+                >
+                  <template #label="{ value }">
+                    <span
+                      :class="`method-color-${value}`"
+                      style="font-weight: 700"
+                    >
+                      {{ value }}
+                    </span>
+                  </template>
+                  <el-option
+                    v-for="m in methods"
+                    :key="m"
+                    :label="m"
+                    :value="m"
+                  >
+                    <span
+                      :class="`method-color-${m}`"
+                      style="
+                        font-weight: 700;
+                        font-size: 12px;
+                        letter-spacing: 0.03em;
+                      "
+                    >
+                      {{ m }}
+                    </span>
+                  </el-option>
+                </el-select>
+                <div class="url-input-wrap" @click="focusUrlInput">
+                  <el-input
+                    v-show="urlFocused || !tab.url"
+                    ref="urlInputRef"
+                    v-model="tab.url"
+                    class="url-input"
+                    placeholder="Enter URL (supports {{variable}} syntax)"
+                    clearable
+                    @focus="urlFocused = true"
+                    @blur="urlFocused = false"
+                    @input="handleUrlInput"
+                    @keyup.ctrl.enter="store.sendActiveRequest"
+                    @keyup.enter="store.sendActiveRequest"
+                  />
+                  <div
+                    v-if="!urlFocused && tab.url"
+                    class="url-badge-display"
+                    title="Click to edit URL"
+                  >
+                    <template v-for="(seg, idx) in urlSegments" :key="idx">
+                      <el-tooltip
+                        v-if="seg.isVar"
+                        placement="top"
+                        :content="
+                          seg.found
+                            ? `{{${seg.key}}} = ${seg.value}`
+                            : `{{${seg.key}}} is not set`
+                        "
+                      >
+                        <span
+                          class="url-inline-var-badge"
+                          :class="seg.found ? 'found' : 'missing'"
+                        >
+                          {{ seg.text }}
+                        </span>
+                      </el-tooltip>
+                      <span v-else class="url-inline-text">{{ seg.text }}</span>
+                    </template>
+                  </div>
+                </div>
+                <div class="request-bar-actions">
+                  <el-button
+                    type="primary"
+                    class="send-action-btn"
+                    :icon="Promotion"
+                    :loading="tab.loading"
+                    @click="store.sendActiveRequest"
+                  >
+                    Send
+                  </el-button>
+                  <el-button
+                    class="save-action-btn"
+                    :icon="FolderChecked"
+                    :disabled="!ws.canEdit"
+                    :title="ws.canEdit ? 'Save Request (Ctrl+S)' : 'Viewer role cannot edit'"
+                    @click="handleSaveClick"
+                  >
+                    Save
+                  </el-button>
                 </div>
               </div>
-              <el-empty
-                v-else-if="!tab.scriptLogs.length && !tab.scriptError"
-                description="No test assertions ran"
-                :image-size="54"
-              />
-              <pre v-if="tab.scriptLogs.length" class="response-pre" style="margin-top: 8px">{{ tab.scriptLogs.join('\n') }}</pre>
-            </el-tab-pane>
-          </el-tabs>
-        </div>
-        </div>
-        </template>
-        </template>
-      </el-main>
 
-      <!-- Hoppscotch-style Quick Action Icon Rail -->
-      <aside class="quick-rail desktop-sidebar">
-        <button
-          type="button"
-          class="rail-btn"
-          :class="{ active: !settings.sidebarHidden && sidebarTab === 'collections' }"
-          title="Collections"
-          @click="settings.sidebarHidden = false; sidebarTab = 'collections'"
-        >
-          <el-icon><Folder /></el-icon>
-        </button>
-        <button
-          type="button"
-          class="rail-btn"
-          title="Environments"
-          @click="openEnvDialog"
-        >
-          <el-icon><Collection /></el-icon>
-        </button>
-        <button
-          type="button"
-          class="rail-btn"
-          :class="{ active: !settings.sidebarHidden && sidebarTab === 'history' }"
-          title="History"
-          @click="settings.sidebarHidden = false; sidebarTab = 'history'"
-        >
-          <el-icon><Clock /></el-icon>
-        </button>
-        <button
-          type="button"
-          class="rail-btn"
-          title="Share Request (Ctrl+U)"
-          @click="shareActiveRequest"
-        >
-          <el-icon><Share /></el-icon>
-        </button>
-        <button
-          type="button"
-          class="rail-btn"
-          title="All Variables & Local Vault"
-          @click="variablesDrawerVisible = true"
-        >
-          <el-icon><Key /></el-icon>
-        </button>
-        <button
-          type="button"
-          class="rail-btn"
-          title="Workspace Overview & Activity"
-          @click="overviewDialogVisible = true"
-        >
-          <el-icon><Document /></el-icon>
-        </button>
-        <button
-          type="button"
-          class="rail-btn"
-          title="Code Snippet"
-          @click="snippetDialogVisible = true"
-        >
-          <span style="font-size: 11px; font-weight: 700">&lt;/&gt;</span>
-        </button>
-      </aside>
-    </el-container>
+              <div v-if="showUrlEnvPreview" class="env-url-preview">
+                <span class="env-url-label">→</span>
+                <div class="env-full-url-inline">
+                  <span class="env-url-plain-part">{{ resolvedUrlPreview }}</span>
+                </div>
+              </div>
+
+              <div
+                ref="splitContainerRef"
+                class="request-response-split"
+                :class="`split-${settings.responsePosition}`"
+              >
+                <RequestEditorPane
+                  v-model:active-tab-name="activeRequestTab"
+                  :effective-variables-map="effectiveVariablesMap"
+                  @open-gql-schema="handleOpenGqlSchema"
+                />
+
+                <div
+                  class="response-resizer"
+                  :class="{ 'is-vertical': isResponseHorizontal }"
+                  title="Drag to resize response panel"
+                  @mousedown="startResponseResize"
+                />
+
+                <ResponseViewerPane
+                  @copy-response="copyActiveResponse"
+                  @download-response="downloadActiveResponse"
+                />
+              </div>
+
+              <div
+                v-if="splitViewEnabled && secondaryTab"
+                style="
+                  margin-top: 8px;
+                  padding: 10px;
+                  border: 1px solid var(--ao-border);
+                  border-radius: 8px;
+                  background: var(--ao-surface);
+                  display: flex;
+                  flex-direction: column;
+                  gap: 6px;
+                "
+              >
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+                  <div style="display: flex; align-items: center; gap: 8px">
+                    <el-tag size="small" effect="plain">Split View</el-tag>
+                    <el-select v-model="secondaryTabId" size="small" style="width: 220px">
+                      <el-option
+                        v-for="t in store.tabs"
+                        :key="t.id"
+                        :label="`${t.method} ${t.name}`"
+                        :value="t.id"
+                      />
+                    </el-select>
+                  </div>
+                  <el-button size="small" link @click="splitViewEnabled = false">Close</el-button>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <span class="method-badge" :class="`method-${secondaryTab.method}`">
+                    {{ secondaryTab.method }}
+                  </span>
+                  <el-input v-model="secondaryTab.url" size="small" style="flex: 1" />
+                  <el-button
+                    size="small"
+                    type="primary"
+                    @click="store.activeTabId = secondaryTab.id"
+                  >
+                    Focus Tab
+                  </el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-main>
+      </el-container>
     </div>
 
-    <footer class="status-footer">
-      <div class="footer-left">
-        <button
-          type="button"
-          class="footer-btn"
-          :title="settings.sidebarHidden ? 'Show Sidebar (Ctrl+B)' : 'Hide Sidebar (Ctrl+B)'"
-          @click="settings.sidebarHidden = !settings.sidebarHidden"
-        >
-          <el-icon><component :is="settings.sidebarHidden ? Expand : Fold" /></el-icon>
-        </button>
-        <button
-          type="button"
-          class="footer-status footer-btn"
-          title="Interceptor Mode (click to toggle Proxy / Browser)"
-          @click="
-            settings.interceptor =
-              settings.interceptor === 'proxy' ? 'browser' : 'proxy'
-          "
-        >
-          <span class="status-dot" />
-          <span>{{ settings.interceptor === 'proxy' ? 'Proxy' : 'Browser' }}</span>
-        </button>
-        <button
-          type="button"
-          class="footer-btn"
-          title="Manage Cookies"
-          @click="cookiesDialogVisible = true"
-        >
-          <span>Cookies</span>
-        </button>
-        <button
-          type="button"
-          class="footer-btn"
-          title="Toggle Console"
-          @click="consoleDrawerVisible = !consoleDrawerVisible"
-        >
-          <el-icon><Monitor /></el-icon>
-          <span>Console{{ consoleStore.logs.length ? ` (${consoleStore.logs.length})` : '' }}</span>
-        </button>
-      </div>
+    <StatusFooter
+      @open-cookies="cookiesDialogVisible = true"
+      @toggle-console="consoleDrawerVisible = !consoleDrawerVisible"
+      @open-support="supportDialogVisible = true"
+      @open-shortcuts="shortcutsDialogVisible = true"
+    />
 
-      <div class="footer-right">
-        <button
-          type="button"
-          class="footer-btn"
-          title="All Variables & Local Vault"
-          @click="variablesDrawerVisible = true"
-        >
-          <span>Vars &amp; Vault</span>
-        </button>
-        <button
-          type="button"
-          class="footer-btn"
-          title="Workspace Overview & Activity"
-          @click="overviewDialogVisible = true"
-        >
-          <span>Overview</span>
-        </button>
-        <button
-          type="button"
-          class="footer-btn"
-          title="Support & Resources"
-          @click="supportDialogVisible = true"
-        >
-          <el-icon><QuestionFilled /></el-icon>
-          <span>Support</span>
-        </button>
-        <button
-          type="button"
-          class="footer-btn"
-          title="Keyboard Shortcuts (Ctrl+/)"
-          @click="shortcutsDialogVisible = true"
-        >
-          <span>? Shortcuts</span>
-        </button>
-        <button
-          type="button"
-          class="footer-btn"
-          title="Toggle Horizontal / Vertical Response Layout"
-          @click="
-            settings.responsePosition =
-              isResponseHorizontal ? 'bottom' : 'right'
-          "
-        >
-          <span>{{ isResponseHorizontal ? 'Vertical Layout' : 'Horizontal Layout' }}</span>
-        </button>
-        <button
-          type="button"
-          class="footer-btn"
-          title="Toggle Theme"
-          @click="settings.toggleTheme"
-        >
-          <el-icon>
-            <component :is="settings.effectiveTheme === 'dark' ? Sunny : Moon" />
-          </el-icon>
-        </button>
-        <button
-          type="button"
-          class="footer-btn"
-          title="Settings (Ctrl+,)"
-          @click="openSettings('layout')"
-        >
-          <el-icon><Setting /></el-icon>
-        </button>
-      </div>
-    </footer>
+    <AuthDialogs
+      v-model:auth-visible="authDialogVisible"
+      v-model:password-visible="setPasswordDialogVisible"
+    />
 
-    <!-- Auth Dialog -->
-    <el-dialog v-model="authDialogVisible" width="min(92vw, 400px)" align-center>
-      <template #header>
-        <div class="auth-dialog-header">
-          <img
-            :src="
-              settings.effectiveTheme === 'dark'
-                ? '/API-OPEN-FULL.png'
-                : '/API-OPEN-FULL-HITAM.png'
-            "
-            alt="Api-Open"
-            class="auth-logo-wordmark"
-          />
-          <el-text size="small" type="info">
-            Sign in to sync workspaces, collections & environments
-          </el-text>
-        </div>
-      </template>
-      <el-tabs v-model="authMode" stretch>
-        <el-tab-pane label="Sign In" name="login" />
-        <el-tab-pane label="Register" name="register" />
-      </el-tabs>
-      <el-form label-position="top" @submit.prevent="handleAuthSubmit">
-        <el-form-item label="Email">
-          <el-input v-model="authEmail" type="email" placeholder="you@example.com" />
-        </el-form-item>
-        <el-form-item label="Password">
-          <el-input v-model="authPassword" type="password" show-password />
-        </el-form-item>
-        <el-button
-          type="primary"
-          native-type="submit"
-          :loading="authSubmitting"
-          style="width: 100%"
-        >
-          {{ authMode === 'login' ? 'Sign In' : 'Create Account' }}
-        </el-button>
-      </el-form>
+    <EnvironmentDialog
+      v-model:visible="envDialogVisible"
+      :initial-env-id="envDialogInitialId"
+    />
 
-      <el-divider>or continue with</el-divider>
-      <div class="oauth-buttons">
-        <el-button @click="handleOAuthLogin('google')">Google</el-button>
-        <el-button @click="handleOAuthLogin('github')">GitHub</el-button>
-        <el-button @click="handleOAuthLogin('discord')">Discord</el-button>
-      </div>
-    </el-dialog>
-
-    <!-- Save Request Dialog -->
-    <el-dialog v-model="saveDialogVisible" title="Save Request" width="min(92vw, 400px)">
-      <el-form label-position="top">
-        <el-form-item label="Request Name">
-          <el-input v-model="saveRequestName" />
-        </el-form-item>
-        <el-form-item label="Collection">
-          <el-select v-model="saveCollectionId" style="width: 100%">
-            <el-option
-              v-for="c in ws.collections"
-              :key="c.id"
-              :label="c.name"
-              :value="c.id"
-            />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="saveDialogVisible = false">Cancel</el-button>
-        <el-button type="primary" @click="confirmSaveRequest">Save</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- New Collection Dialog -->
-    <el-dialog v-model="newCollectionVisible" title="New Collection" width="min(92vw, 360px)">
-      <el-input v-model="newCollectionName" placeholder="Collection name" />
-      <template #footer>
-        <el-button @click="newCollectionVisible = false">Cancel</el-button>
-        <el-button type="primary" @click="confirmCreateCollection">Create</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- Environments Dialog -->
-    <el-dialog v-model="envDialogVisible" title="Manage Environments" width="min(94vw, 680px)">
-      <div class="env-create-row">
-        <el-input
-          v-model="newEnvName"
-          size="small"
-          placeholder="New environment name (e.g. Production)"
-          style="max-width: 260px"
-        />
-        <el-button size="small" type="primary" @click="handleCreateEnv">
-          Create Environment
-        </el-button>
-      </div>
-
-      <div v-if="ws.environments.length" class="env-editor">
-        <div class="env-select-row">
-          <el-select
-            v-model="editingEnvId"
-            size="small"
-            @change="selectEnvForEdit"
-            style="width: 220px"
-          >
-            <el-option
-              v-for="env in ws.environments"
-              :key="env.id"
-              :label="env.name"
-              :value="env.id"
-            />
-          </el-select>
-          <el-button
-            size="small"
-            type="danger"
-            plain
-            @click="ws.deleteEnvironment(editingEnvId)"
-          >
-            Delete Env
-          </el-button>
-        </div>
-
-        <el-table :data="editingEnvVars" size="small" border>
-          <el-table-column width="46" align="center">
-            <template #default="{ row }">
-              <el-checkbox v-model="row.enabled" />
-            </template>
-          </el-table-column>
-          <el-table-column label="Variable">
-            <template #default="{ row }">
-              <el-input v-model="row.key" size="small" placeholder="base_url" />
-            </template>
-          </el-table-column>
-          <el-table-column label="Value">
-            <template #default="{ row }">
-              <el-input
-                v-model="row.value"
-                size="small"
-                :type="row.isSecret ? 'password' : 'text'"
-                show-password
-              />
-            </template>
-          </el-table-column>
-          <el-table-column label="Secret" width="70" align="center">
-            <template #default="{ row }">
-              <el-checkbox v-model="row.isSecret" />
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <div class="env-actions">
-          <el-button size="small" :icon="Plus" @click="addEnvVarRow">
-            Add Variable
-          </el-button>
-          <el-button size="small" type="primary" @click="saveEnvVars">
-            Save Variables
-          </el-button>
-        </div>
-      </div>
-    </el-dialog>
-
-    <!-- Import cURL Dialog -->
-    <el-dialog v-model="curlDialogVisible" title="Import cURL" width="min(94vw, 560px)">
-      <el-input
-        v-model="curlInput"
-        type="textarea"
-        :rows="7"
-        class="code-area"
-        placeholder="Paste cURL command here (e.g. curl -X POST https://api.example.com/items -H 'Content-Type: application/json' -d '{&quot;name&quot;:&quot;test&quot;}')"
-      />
-      <template #footer>
-        <el-button @click="curlDialogVisible = false">Cancel</el-button>
-        <el-button type="primary" @click="handleImportCurl">Import</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- Code Snippet Dialog -->
-    <el-dialog v-model="snippetDialogVisible" title="Generate Code Snippet" width="min(94vw, 620px)">
-      <div class="body-controls">
-        <el-select v-model="snippetLang" size="small" style="width: 200px">
-          <el-option label="cURL" value="curl" />
-          <el-option label="JavaScript (fetch)" value="fetch" />
-          <el-option label="Axios" value="axios" />
-          <el-option label="Go (net/http)" value="go" />
-          <el-option label="Python (requests)" value="python" />
-        </el-select>
-        <el-button size="small" type="primary" @click="copyGeneratedCode">
-          Copy Code
-        </el-button>
-      </div>
-      <pre class="response-pre">{{ generatedCode }}</pre>
-    </el-dialog>
+    <TeamWorkspaceDialog v-model:visible="teamDialogVisible" />
 
     <CollectionRunnerDialog
       v-model:visible="runnerVisible"
       :collection-node="runnerTargetNode"
     />
-
-    <!-- API Documentation Modal -->
-    <el-dialog v-model="docsVisible" :title="`API Docs: ${docsTitle}`" width="min(94vw, 680px)">
-      <div class="body-controls">
-        <el-button size="small" type="primary" @click="downloadDocsMarkdown">
-          Download .md
-        </el-button>
-      </div>
-      <pre class="response-pre">{{ docsMarkdown }}</pre>
-    </el-dialog>
-
-    <!-- Team Workspace & Invite Modal -->
-    <el-dialog v-model="teamDialogVisible" title="Team Workspaces & Members" width="min(94vw, 620px)">
-      <div class="env-create-row">
-        <el-input
-          v-model="newTeamName"
-          size="small"
-          placeholder="New team workspace name"
-          style="max-width: 240px"
-        />
-        <el-button size="small" type="primary" @click="handleCreateTeam">
-          Create Team Workspace
-        </el-button>
-      </div>
-
-      <el-divider>Invite Member to Current Workspace</el-divider>
-      <div class="env-create-row">
-        <el-input
-          v-model="inviteEmail"
-          size="small"
-          placeholder="teammate@example.com"
-          style="max-width: 240px"
-        />
-        <el-select v-model="inviteRole" size="small" style="width: 110px">
-          <el-option label="Editor" value="EDITOR" />
-          <el-option label="Viewer" value="VIEWER" />
-          <el-option label="Owner" value="OWNER" />
-        </el-select>
-        <el-button
-          size="small"
-          type="primary"
-          :loading="inviting"
-          @click="handleInviteMember"
-        >
-          Send Invite
-        </el-button>
-      </div>
-
-      <el-table :data="ws.members" size="small" border>
-        <el-table-column label="Email" prop="user.email" />
-        <el-table-column label="Role" prop="role" width="100" />
-        <el-table-column width="70" align="center">
-          <template #default="{ row }">
-            <el-button
-              v-if="row.userId !== ws.user?.id"
-              :icon="Delete"
-              link
-              type="danger"
-              size="small"
-              @click="ws.removeMember(row.id)"
-            />
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
-
-    <!-- GraphQL Schema Introspection Modal -->
-    <el-dialog v-model="gqlSchemaVisible" title="GraphQL Schema" width="min(94vw, 680px)">
-      <el-tabs>
-        <el-tab-pane :label="`Queries (${gqlQueries.length})`">
-          <el-table :data="gqlQueries" size="small" border max-height="360">
-            <el-table-column prop="name" label="Field" width="180" />
-            <el-table-column prop="args" label="Arguments" />
-            <el-table-column prop="returnType" label="Returns" width="160" />
-          </el-table>
-        </el-tab-pane>
-        <el-tab-pane :label="`Mutations (${gqlMutations.length})`">
-          <el-table :data="gqlMutations" size="small" border max-height="360">
-            <el-table-column prop="name" label="Field" width="180" />
-            <el-table-column prop="args" label="Arguments" />
-            <el-table-column prop="returnType" label="Returns" width="160" />
-          </el-table>
-        </el-tab-pane>
-      </el-tabs>
-    </el-dialog>
-    <!-- Mobile Sidebar Drawer -->
-    <el-drawer
-      v-model="mobileSidebarVisible"
-      title="Workspace"
-      :direction="mobileDrawerDirection"
-      size="290px"
-    >
-      <el-tabs v-model="sidebarTab" stretch>
-        <el-tab-pane label="Collections" name="collections">
-          <template v-if="ws.isAuthenticated">
-            <div class="sidebar-toolbar">
-              <el-text size="small" type="info">Collections</el-text>
-              <div style="display: flex; gap: 4px; align-items: center">
-                <el-button size="small" :icon="Upload" link type="primary" @click="triggerPostmanImport">
-                  Postman
-                </el-button>
-                <el-button size="small" :icon="Plus" link type="primary" @click="newCollectionVisible = true">
-                  New
-                </el-button>
-              </div>
-            </div>
-            <el-tree
-              v-if="ws.collectionTree.length"
-              :data="ws.collectionTree"
-              node-key="id"
-              default-expand-all
-              @node-click="handleTreeNodeClick"
-            />
-            <el-empty v-else description="No collections yet" :image-size="54" />
-          </template>
-          <el-empty v-else description="Sign in to sync collections" :image-size="54">
-            <el-button type="primary" size="small" @click="authDialogVisible = true; mobileSidebarVisible = false">
-              Sign In
-            </el-button>
-          </el-empty>
-        </el-tab-pane>
-        <el-tab-pane label="History" name="history">
-          <div v-if="store.history.length" class="history-list">
-            <div
-              v-for="item in store.history"
-              :key="item.id"
-              class="history-item"
-              @click="store.addTab({ method: item.method, url: item.url, name: item.url }); mobileSidebarVisible = false"
-            >
-              <el-tag size="small" effect="plain">{{ item.method }}</el-tag>
-              <span class="history-url">{{ item.url }}</span>
-            </div>
-          </div>
-          <el-empty v-else description="No history yet" :image-size="54" />
-        </el-tab-pane>
-      </el-tabs>
-    </el-drawer>
 
     <SettingsDialog
       v-model:visible="settingsVisible"
@@ -2830,83 +1108,9 @@ async function saveEnvVars() {
 
     <CookiesDialog v-model:visible="cookiesDialogVisible" />
 
-    <!-- Quick Search API Dialog (Ctrl+K) -->
-    <el-dialog
-      v-model="searchDialogVisible"
-      title="Search API (Collections & History)"
-      width="min(94vw, 560px)"
-    >
-      <el-input
-        ref="searchInputRef"
-        v-model="searchQuery"
-        :prefix-icon="Search"
-        placeholder="Search by endpoint name, URL, or method..."
-        clearable
-        @keyup.enter="searchableRequests[0] && selectSearchItem(searchableRequests[0])"
-      />
-      <div class="search-results-list">
-        <el-empty
-          v-if="!searchableRequests.length"
-          description="No matching API requests"
-          :image-size="50"
-        />
-        <div
-          v-for="item in searchableRequests"
-          :key="`${item.kind}-${item.id}`"
-          class="history-item"
-          @click="selectSearchItem(item)"
-        >
-          <span class="method-badge" :class="`method-${item.method}`">
-            {{ item.method }}
-          </span>
-          <div style="overflow: hidden; flex: 1">
-            <div style="font-size: 13px; font-weight: 600">{{ item.name }}</div>
-            <div class="history-url">{{ item.url }}</div>
-          </div>
-          <el-tag size="small" effect="plain">
-            {{ item.kind === 'saved' ? 'Saved' : 'History' }}
-          </el-tag>
-        </div>
-      </div>
-    </el-dialog>
-
-    <!-- Keyboard Shortcuts Drawer (Hoppscotch Style) -->
-    <el-drawer
-      v-model="shortcutsDialogVisible"
-      title="Keyboard Shortcuts"
-      direction="rtl"
-      size="min(92vw, 360px)"
-    >
-      <el-input
-        v-model="shortcutSearch"
-        :prefix-icon="Search"
-        size="small"
-        placeholder="Search shortcuts..."
-        clearable
-        style="margin-bottom: 14px"
-      />
-      <div class="shortcuts-groups">
-        <div
-          v-for="group in filteredShortcutGroups"
-          :key="group.title"
-          class="shortcut-group"
-        >
-          <div class="shortcut-group-title">{{ group.title }}</div>
-          <div
-            v-for="item in group.items"
-            :key="item.keys"
-            class="shortcut-row"
-          >
-            <span class="shortcut-desc">{{ item.desc }}</span>
-            <kbd class="kbd-key">{{ item.keys }}</kbd>
-          </div>
-        </div>
-      </div>
-    </el-drawer>
-
     <VariablesDrawer
       v-model:visible="variablesDrawerVisible"
-      @open-envs="openEnvDialog"
+      @open-envs="openEnvDialog()"
     />
 
     <SupportDialog
@@ -2915,840 +1119,43 @@ async function saveEnvVars() {
       @open-team="ElMessage.info('Invite team members via Workspace settings')"
     />
 
-    <!-- Bottom Console Drawer -->
-    <el-drawer
-      v-model="consoleDrawerVisible"
-      title="Console"
-      direction="btt"
-      size="260px"
-    >
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px">
-        <el-text size="small" type="info">
-          HTTP requests, script logs, and workspace activity
-        </el-text>
-        <el-button size="small" link type="danger" @click="consoleStore.clearLogs">
-          Clear
-        </el-button>
-      </div>
-      <div v-if="consoleStore.logs.length" style="display: flex; flex-direction: column; gap: 4px; font-family: monospace; font-size: 12px">
-        <div
-          v-for="entry in consoleStore.logs"
-          :key="entry.id"
-          style="display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 4px; background: var(--ao-surface-2)"
-        >
-          <span style="opacity: 0.6; white-space: nowrap">{{ entry.timestamp.slice(11, 19) }}</span>
-          <el-tag
-            size="small"
-            :type="entry.type === 'error' ? 'danger' : entry.type === 'http' ? 'success' : entry.type === 'script' ? 'warning' : 'info'"
-          >
-            {{ entry.type.toUpperCase() }}
-          </el-tag>
-          <span style="word-break: break-all">{{ entry.message }}</span>
-        </div>
-      </div>
-      <el-empty v-else description="Console is empty" :image-size="48" />
-    </el-drawer>
+    <WorkspaceModals
+      v-model:save-visible="saveDialogVisible"
+      :initial-save-request-name="saveRequestName"
+      :initial-save-collection-id="saveCollectionId"
+      v-model:new-collection-visible="newCollectionVisible"
+      v-model:curl-visible="curlDialogVisible"
+      v-model:snippet-visible="snippetDialogVisible"
+      v-model:docs-visible="docsVisible"
+      :docs-collection-id="docsCollectionId"
+      :docs-title="docsTitle"
+      :docs-markdown="docsMarkdown"
+      v-model:gql-schema-visible="gqlSchemaVisible"
+      :gql-queries="gqlQueries"
+      :gql-mutations="gqlMutations"
+      v-model:mobile-sidebar-visible="mobileSidebarVisible"
+      v-model:search-visible="searchDialogVisible"
+      v-model:shortcuts-visible="shortcutsDialogVisible"
+      v-model:download-app-visible="downloadAppDialogVisible"
+      v-model:collection-settings-visible="collectionSettingsVisible"
+      :collection-settings-target="collectionSettingsTarget"
+      v-model:spec-viewer-visible="specViewerVisible"
+      v-model:monitors-visible="monitorsVisible"
+      v-model:flows-visible="flowsVisible"
+      v-model:db-client-visible="dbClientVisible"
+      v-model:schemas-visible="schemasVisible"
+      v-model:proxy-recorder-visible="proxyRecorderVisible"
+      v-model:snapshots-visible="snapshotsVisible"
+      :snapshots-target="snapshotsTarget"
+      v-model:git-sync-visible="gitSyncVisible"
+      @trigger-postman-import="sidebarRef?.triggerPostmanImport?.()"
+      @open-auth="authDialogVisible = true"
+    />
 
-    <!-- Workspace Overview & Activity Dialog -->
-    <el-dialog
-      v-model="overviewDialogVisible"
-      :title="`${ws.workspaces.find((w) => w.id === ws.activeWorkspaceId)?.name ?? 'Workspace'} — Overview & Activity`"
-      width="min(94vw, 640px)"
-    >
-      <el-tabs>
-        <el-tab-pane label="Overview">
-          <div style="display: flex; flex-direction: column; gap: 12px">
-            <el-input
-              v-model="workspaceSummary"
-              placeholder="Add a short workspace summary..."
-            />
-            <el-input
-              v-model="workspaceReadme"
-              type="textarea"
-              :rows="6"
-              placeholder="Write workspace README / documentation (saved locally)..."
-            />
-            <div style="display: flex; justify-content: space-between; align-items: center">
-              <el-text size="small" type="info">
-                {{ ws.collectionTree.length }} collection(s) in workspace
-              </el-text>
-              <el-button type="primary" size="small" :icon="Download" @click="exportAllCollections">
-                Export All Collections
-              </el-button>
-            </div>
-          </div>
-        </el-tab-pane>
-        <el-tab-pane label="Activity">
-          <div v-if="consoleStore.logs.length" style="display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto">
-            <div
-              v-for="entry in consoleStore.logs"
-              :key="entry.id"
-              style="display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 6px; background: var(--ao-surface-2); font-size: 12px"
-            >
-              <span>{{ entry.message }}</span>
-              <span style="opacity: 0.6; white-space: nowrap">{{ entry.timestamp.slice(11, 19) }}</span>
-            </div>
-          </div>
-          <el-empty v-else description="No activity recorded yet" :image-size="48" />
-        </el-tab-pane>
-      </el-tabs>
-    </el-dialog>
+    <ConsoleDrawer v-model:visible="consoleDrawerVisible" />
+    <DevToolboxDialog v-model:visible="toolboxVisible" />
+    <WebhookBinDialog v-model:visible="webhookBinVisible" />
+    <TrashDialog v-model:visible="trashVisible" />
+    <PluginMarketplaceDialog v-model:visible="marketplaceVisible" />
   </el-container>
 </template>
-
-<style scoped>
-.app-shell {
-  height: 100vh;
-  background: var(--ao-bg);
-  color: var(--ao-text);
-  display: flex;
-  flex-direction: column;
-}
-.shell-content {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.shell-content.navbar-bottom {
-  flex-direction: column-reverse;
-}
-.shell-content.navbar-bottom .top-bar {
-  border-bottom: none;
-  border-top: 1px solid var(--ao-border);
-}
-.status-footer {
-  height: 28px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  font-size: 11.5px;
-  background: var(--ao-surface);
-  border-top: 1px solid var(--ao-border);
-  color: var(--ao-text-muted);
-}
-.footer-left,
-.footer-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.footer-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: transparent;
-  border: none;
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: var(--ao-text-muted);
-  cursor: pointer;
-  font-size: 11.5px;
-  line-height: 1;
-}
-.footer-btn:hover {
-  color: var(--ao-text);
-  background: var(--ao-hover);
-}
-.footer-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #10b981;
-}
-.top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
-  background: var(--ao-surface);
-  border-bottom: 1px solid var(--ao-border);
-  padding: 8px 16px;
-  min-height: 58px;
-}
-.top-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.mobile-menu-btn {
-  display: none;
-}
-.brand {
-  display: flex;
-  align-items: center;
-  background: transparent;
-  padding: 0;
-}
-.brand-full-logo {
-  width: 140px;
-  height: 42px;
-  object-fit: contain;
-  display: block;
-}
-.auth-dialog-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 6px;
-  padding-top: 4px;
-}
-.auth-logo-wordmark {
-  height: 44px;
-  width: auto;
-  object-fit: contain;
-}
-.top-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.top-select {
-  width: 125px;
-}
-.top-search-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 210px;
-  max-width: 300px;
-  flex: 1;
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 8px;
-  border: 1px solid var(--ao-border);
-  background: var(--ao-surface-elevated);
-  color: var(--ao-text-muted);
-  cursor: pointer;
-  font-size: 13px;
-  transition: border-color 0.15s, background 0.15s;
-}
-.top-search-bar:hover {
-  border-color: var(--ao-accent);
-  background: var(--ao-hover);
-}
-.top-search-placeholder {
-  flex: 1;
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.user-name-text {
-  max-width: 110px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: inline-block;
-}
-.main-body {
-  overflow: hidden;
-  flex: 1;
-  min-height: 0;
-}
-.main-body.sidebar-pos-left {
-  flex-direction: row;
-}
-.main-body.sidebar-pos-right {
-  flex-direction: row-reverse;
-}
-.main-body.sidebar-pos-top {
-  flex-direction: column;
-}
-.main-body.sidebar-pos-bottom {
-  flex-direction: column-reverse;
-}
-.sidebar {
-  background: var(--ao-surface);
-  border-right: 1px solid var(--ao-border);
-  padding: 8px 12px;
-  overflow-y: auto;
-  flex-shrink: 0;
-}
-.sidebar-pos-right .sidebar {
-  border-right: none;
-  border-left: 1px solid var(--ao-border);
-}
-.sidebar-pos-top .sidebar {
-  border-right: none;
-  border-bottom: 1px solid var(--ao-border);
-}
-.sidebar-pos-bottom .sidebar {
-  border-right: none;
-  border-top: 1px solid var(--ao-border);
-}
-.sidebar-resizer {
-  width: 4px;
-  cursor: col-resize;
-  background: transparent;
-  transition: background 0.15s;
-  flex-shrink: 0;
-}
-.sidebar-resizer.is-horizontal {
-  width: 100%;
-  height: 4px;
-  cursor: row-resize;
-}
-.sidebar-resizer:hover {
-  background: var(--ao-accent);
-}
-.request-response-split {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  gap: 4px;
-}
-.request-response-split.split-bottom {
-  flex-direction: column;
-}
-.request-response-split.split-top {
-  flex-direction: column-reverse;
-}
-.request-response-split.split-right {
-  flex-direction: row;
-}
-.request-response-split.split-left {
-  flex-direction: row-reverse;
-}
-.request-pane {
-  flex: 1;
-  min-width: 0;
-  min-height: 160px;
-  overflow-y: auto;
-  background: var(--ao-surface);
-  border: 1px solid var(--ao-border);
-  border-radius: 8px;
-  padding: 10px 14px;
-}
-.response-resizer {
-  height: 5px;
-  cursor: row-resize;
-  background: transparent;
-  border-radius: 4px;
-  transition: background 0.15s;
-  flex-shrink: 0;
-}
-.response-resizer.is-vertical {
-  width: 5px;
-  height: auto;
-  cursor: col-resize;
-}
-.response-resizer:hover {
-  background: var(--ao-accent);
-}
-.sidebar-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.tree-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding-right: 6px;
-}
-.tree-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow: hidden;
-}
-.tree-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.tree-actions :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-.tree-text {
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.history-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 9px;
-  border-radius: 6px;
-  cursor: pointer;
-  border: 1px solid var(--ao-border);
-  background: var(--ao-surface-elevated);
-  transition: background 0.15s;
-}
-.history-item:hover {
-  background: var(--ao-hover);
-}
-.history-url {
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.workspace {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 16px;
-  overflow-y: auto;
-  background: var(--ao-bg);
-}
-.request-bar {
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
-  align-items: center;
-  background: var(--ao-surface);
-  border: 1px solid var(--ao-border);
-  border-radius: 8px;
-  padding: 8px 10px;
-}
-.method-select {
-  width: 120px;
-  flex-shrink: 0;
-}
-.url-input {
-  flex: 1;
-  min-width: 180px;
-}
-.request-bar-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.body-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.code-area :deep(textarea) {
-  font-family: Consolas, Monaco, 'Courier New', monospace;
-  font-size: 13px;
-}
-.gql-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-.response-section {
-  background: var(--ao-surface);
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  min-width: 220px;
-  min-height: 160px;
-}
-.resp-accent-status-2xx {
-  border-top: 3px solid #10b981;
-}
-.resp-accent-status-3xx {
-  border-top: 3px solid #06b6d4;
-}
-.resp-accent-status-4xx {
-  border-top: 3px solid #f59e0b;
-}
-.resp-accent-status-5xx,
-.resp-accent-error {
-  border-top: 3px solid #ef4444;
-}
-.response-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-.response-meta {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.response-pre {
-  background: var(--ao-code-bg);
-  border: 1px solid var(--ao-border);
-  color: var(--ao-text);
-  border-radius: 6px;
-  padding: 12px;
-  font-family: Consolas, Monaco, 'Courier New', monospace;
-  font-size: 12.5px;
-  max-height: 360px;
-  overflow: auto;
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.image-preview {
-  max-width: 100%;
-  max-height: 320px;
-  border: 1px solid var(--ao-border);
-  border-radius: 6px;
-}
-.env-create-row,
-.env-select-row,
-.env-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 12px;
-}
-.env-actions {
-  margin-top: 10px;
-  justify-content: space-between;
-}
-.oauth-buttons {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-.oauth-buttons :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-.test-results-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.test-result-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-}
-.binary-box {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 12px;
-  border: 1px dashed var(--ao-border);
-  border-radius: 6px;
-}
-.search-results-list {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 340px;
-  overflow-y: auto;
-}
-.kbd-key {
-  font-family: Consolas, Monaco, monospace;
-  font-size: 11.5px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--ao-border);
-  background: var(--ao-surface-elevated);
-}
-.quick-rail {
-  width: 40px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 4px;
-  background: var(--ao-surface);
-  border-left: 1px solid var(--ao-border);
-}
-.rail-btn {
-  width: 30px;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ao-text-muted);
-  cursor: pointer;
-}
-.rail-btn:hover,
-.rail-btn.active {
-  color: var(--ao-accent);
-  background: var(--ao-hover);
-}
-.shortcuts-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.shortcut-group-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ao-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  margin-bottom: 8px;
-}
-.shortcut-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 0;
-  font-size: 13px;
-}
-
-@media (max-width: 900px) {
-  .desktop-sidebar {
-    display: none;
-  }
-  .mobile-menu-btn {
-    display: inline-flex;
-  }
-  .top-select {
-    width: 110px;
-  }
-  .top-search-bar {
-    min-width: 150px;
-  }
-}
-
-@media (max-width: 640px) {
-  .top-bar {
-    padding: 8px 12px;
-  }
-  .top-search-bar {
-    order: 3;
-    max-width: 100%;
-    width: 100%;
-    flex-basis: 100%;
-  }
-  .workspace {
-    padding: 10px 12px;
-  }
-  .request-bar {
-    flex-wrap: wrap;
-  }
-  .method-select {
-    width: 105px;
-  }
-  .request-bar-actions {
-    width: 100%;
-    justify-content: flex-end;
-  }
-  .gql-grid {
-    grid-template-columns: 1fr;
-  }
-  .response-header {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .env-create-row,
-  .env-select-row,
-  .env-actions {
-    flex-wrap: wrap;
-  }
-  .request-response-split.split-right,
-  .request-response-split.split-left {
-    flex-direction: column;
-  }
-  .response-section {
-    width: 100% !important;
-    height: auto !important;
-  }
-}
-.sidebar-sections {
-  margin-top: 12px;
-  border-top: 1px solid var(--ao-border);
-}
-.sidebar-sections :deep(.el-collapse-item__header) {
-  height: 32px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  background: transparent;
-  color: var(--ao-text-muted);
-}
-.sidebar-sections :deep(.el-collapse-item__wrap) {
-  background: transparent;
-}
-.sidebar-sections :deep(.el-collapse-item__content) {
-  padding-bottom: 10px;
-}
-.sidebar-section-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.sidebar-section-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  padding: 5px 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ao-text);
-  font-size: 12px;
-  cursor: pointer;
-  text-align: left;
-}
-.sidebar-section-item:hover {
-  background: var(--ao-surface-2);
-}
-.sidebar-section-item.active {
-  border-color: var(--el-color-primary);
-  background: var(--ao-surface-2);
-}
-.sidebar-item-meta {
-  font-size: 11px;
-  opacity: 0.65;
-}
-.notif-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.notif-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 280px;
-  overflow-y: auto;
-}
-.notif-item {
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: var(--ao-surface-2);
-  font-size: 12px;
-}
-.notif-msg {
-  margin-top: 4px;
-  word-break: break-word;
-}
-.workspace-tab-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-bottom: 1px solid var(--ao-border);
-  margin-bottom: 10px;
-}
-.workspace-tab-header .request-doc-tabs {
-  flex: 1;
-  min-width: 0;
-}
-.workspace-tab-header .request-doc-tabs :deep(.el-tabs__header) {
-  margin-bottom: 0;
-  border-bottom: none;
-}
-.overview-pill-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--ao-text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.overview-pill-btn:hover {
-  background: var(--ao-surface-2);
-  color: var(--ao-text);
-}
-.overview-pill-btn.active {
-  background: var(--ao-surface-2);
-  border-color: var(--ao-border);
-  color: var(--ao-text);
-}
-.workspace-tab-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-.tab-env-select {
-  width: 145px;
-}
-.workspace-overview-page {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 8px;
-  max-width: 920px;
-}
-.overview-page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.overview-title {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 700;
-}
-.overview-meta {
-  display: flex;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--ao-text-muted);
-  margin-top: 4px;
-}
-.overview-summary-input {
-  margin-bottom: 14px;
-}
-.overview-section-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ao-text-muted);
-  margin-bottom: 6px;
-}
-.overview-collections-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 10px;
-}
-.overview-collection-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 12px;
-  border: 1px solid var(--ao-border);
-  border-radius: 8px;
-  background: var(--ao-surface-2);
-}
-.overview-updates-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.overview-update-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: var(--ao-surface-2);
-  font-size: 12px;
-}
-</style>

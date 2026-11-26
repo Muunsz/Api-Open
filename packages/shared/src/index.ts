@@ -17,6 +17,7 @@ export interface KeyValueItem {
 
 export type AuthConfig =
   | { type: 'none' }
+  | { type: 'inherit' }
   | { type: 'bearer'; token: string }
   | { type: 'basic'; username: string; password: string }
   | { type: 'apikey'; key: string; value: string; addTo: 'header' | 'query' }
@@ -54,6 +55,22 @@ export type AuthConfig =
       algorithm: 'HS256' | 'HS512';
       payload: string;
       headerPrefix?: string;
+    }
+  | {
+      type: 'oauth1';
+      consumerKey: string;
+      consumerSecret: string;
+      token?: string;
+      tokenSecret?: string;
+      signatureMethod?: 'HMAC-SHA1' | 'HMAC-SHA256' | 'PLAINTEXT';
+      realm?: string;
+    }
+  | {
+      type: 'ntlm';
+      username: string;
+      password: string;
+      domain?: string;
+      workstation?: string;
     };
 
 export type BodyMode =
@@ -92,6 +109,39 @@ export interface BodyConfig {
   };
 }
 
+export interface RequestSettings {
+  followRedirects?: boolean;
+  maxRedirects?: number;
+  verifySsl?: boolean;
+  timeoutMs?: number;
+  encodeUrl?: boolean;
+}
+
+export interface ClientCertConfig {
+  host: string;
+  certPem: string;
+  keyPem?: string;
+  caPem?: string;
+  passphrase?: string;
+}
+
+export interface ResponseTiming {
+  dnsMs: number;
+  tcpMs: number;
+  tlsMs: number;
+  ttfbMs: number;
+  downloadMs: number;
+  totalMs: number;
+  remoteIp?: string;
+  tlsProtocol?: string;
+}
+
+export interface TunnelProxyConfig {
+  url: string;
+  username?: string;
+  password?: string;
+}
+
 export interface ProxyExecuteRequest {
   method: HttpMethod;
   url: string;
@@ -100,6 +150,11 @@ export interface ProxyExecuteRequest {
   auth?: AuthConfig;
   body?: BodyConfig;
   timeoutMs?: number;
+  followRedirects?: boolean;
+  maxRedirects?: number;
+  verifySsl?: boolean;
+  clientCert?: ClientCertConfig;
+  tunnelProxy?: TunnelProxyConfig;
 }
 
 export interface ProxyExecuteResponse {
@@ -110,6 +165,8 @@ export interface ProxyExecuteResponse {
   headers: Record<string, string>;
   body: string;
   isBase64?: boolean;
+  timing?: ResponseTiming;
+  redirectedUrl?: string;
 }
 
 export interface EnvVariable {
@@ -118,4 +175,14 @@ export interface EnvVariable {
   value: string;
   isSecret: boolean;
   enabled: boolean;
+}
+
+export interface ResponseExample {
+  id: string;
+  name: string;
+  statusCode: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+  createdAt?: string;
 }

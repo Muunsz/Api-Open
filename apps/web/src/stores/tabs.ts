@@ -6,6 +6,8 @@ import type {
   HttpMethod,
   KeyValueItem,
   ProxyExecuteResponse,
+  RequestSettings,
+  ResponseExample,
 } from '@api-open/shared';
 import {
   executeBrowserDirectRequest,
@@ -18,7 +20,12 @@ import {
   type TestCaseResult,
 } from '../utils/scriptRunner';
 import { generateSnippet, type SnippetLang } from '../utils/snippetGenerator';
-import { buildUrlWithParams, parseQueryFromUrl } from '../utils/urlSync';
+import {
+  applyPathParamsToUrl,
+  buildUrlWithParams,
+  extractPathParamNames,
+  parseQueryFromUrl,
+} from '../utils/urlSync';
 import { resolveVariables } from '../utils/variables';
 import { useConsoleStore } from './console';
 import { useCookiesStore } from './cookies';
@@ -33,13 +40,17 @@ export interface RequestTab {
   method: HttpMethod;
   url: string;
   queryParams: KeyValueItem[];
+  pathParams: KeyValueItem[];
   headers: KeyValueItem[];
   auth: AuthConfig;
   body: BodyConfig;
+  examples: ResponseExample[];
+  settings: RequestSettings;
   preRequestScript: string;
   testScript: string;
   loading: boolean;
   response: ProxyExecuteResponse | null;
+  previousResponse: ProxyExecuteResponse | null;
   error: string | null;
   testResults: TestCaseResult[];
   scriptLogs: string[];
@@ -74,6 +85,7 @@ function createDefaultTab(partial?: Partial<RequestTab>): RequestTab {
     queryParams: partial?.queryParams?.length
       ? partial.queryParams
       : [createEmptyRow()],
+    pathParams: partial?.pathParams ?? [],
     headers: partial?.headers?.length ? partial.headers : [createEmptyRow()],
     auth: partial?.auth ?? { type: 'none' },
     body: partial?.body ?? {
@@ -85,10 +97,19 @@ function createDefaultTab(partial?: Partial<RequestTab>): RequestTab {
       binary: { fileName: '', contentBase64: '', mimeType: '' },
       graphql: { query: '', variables: '{}' },
     },
+    examples: partial?.examples ?? [],
+    settings: partial?.settings ?? {
+      followRedirects: true,
+      maxRedirects: 10,
+      verifySsl: true,
+      timeoutMs: 15000,
+      encodeUrl: true,
+    },
     preRequestScript: partial?.preRequestScript ?? '',
     testScript: partial?.testScript ?? '',
     loading: false,
     response: null,
+    previousResponse: null,
     error: null,
     testResults: [],
     scriptLogs: [],
@@ -226,8 +247,17 @@ export const useTabsStore = defineStore('tabs', () => {
       queryParams: req.queryParams?.length
         ? [...req.queryParams]
         : [createEmptyRow()],
+      pathParams: req.pathParams?.length ? [...req.pathParams] : [],
       auth: req.auth ?? { type: 'none' },
       body: req.body ?? { mode: 'none' },
+      examples: req.examples?.length ? [...req.examples] : [],
+      settings: req.settings ?? {
+        followRedirects: true,
+        maxRedirects: 10,
+        verifySsl: true,
+        timeoutMs: 15000,
+        encodeUrl: true,
+      },
       preRequestScript: req.preRequestScript ?? '',
       testScript: req.testScript ?? '',
     });
@@ -248,11 +278,31 @@ export const useTabsStore = defineStore('tabs', () => {
     }
   }
 
+  function syncPathParamsFromUrl(targetTab?: RequestTab) {
+    const tab = targetTab ?? activeTab.value;
+    if (!tab) return;
+    const names = extractPathParamNames(tab.url);
+    const existingMap = new Map(tab.pathParams.map((p) => [p.key, p]));
+    tab.pathParams = names.map((name) => {
+      const prev = existingMap.get(name);
+      return (
+        prev ?? {
+          id: uid(),
+          key: name,
+          value: '',
+          description: '',
+          enabled: true,
+        }
+      );
+    });
+  }
+
   function syncParamsFromUrl() {
     const tab = activeTab.value;
     if (!tab) return;
     const parsed = parseQueryFromUrl(tab.url);
     tab.queryParams = parsed.length ? parsed : [createEmptyRow()];
+    syncPathParamsFromUrl(tab);
   }
 
   function syncUrlFromParams() {
@@ -282,7 +332,11 @@ export const useTabsStore = defineStore('tabs', () => {
 
   function buildResolvedRequest(tab: RequestTab, vars: Record<string, string>) {
     const r = (val: string) => resolveVariables(val, vars);
-    const resolvedUrl = r(tab.url.trim());
+    const resolvedUrl = applyPathParamsToUrl(
+      r(tab.url.trim()),
+      tab.pathParams ?? [],
+      r,
+    );
 
     const queryParams: Record<string, string> = {};
     for (const row of tab.queryParams) {
@@ -291,60 +345,75 @@ export const useTabsStore = defineStore('tabs', () => {
       }
     }
 
+    const ws = useWorkspaceStore();
+    const inherited = ws.getEffectiveCollectionAuthAndHeaders(tab.collectionId);
+
     const headers: Record<string, string> = {};
+    for (const row of inherited.headers) {
+      if (row.enabled && row.key.trim()) {
+        headers[r(row.key.trim())] = r(row.value);
+      }
+    }
     for (const row of tab.headers) {
       if (row.enabled && row.key.trim()) {
         headers[r(row.key.trim())] = r(row.value);
       }
     }
 
+    const effectiveAuth: AuthConfig =
+      tab.auth.type === 'inherit' ? inherited.auth : tab.auth;
+
     let resolvedAuth: AuthConfig | undefined;
 
-    if (tab.auth.type === 'bearer' && tab.auth.token) {
-      headers['Authorization'] = `Bearer ${r(tab.auth.token)}`;
-    } else if (tab.auth.type === 'oauth2' && tab.auth.accessToken) {
-      const prefix = tab.auth.headerPrefix?.trim() || 'Bearer';
-      headers['Authorization'] = `${prefix} ${r(tab.auth.accessToken)}`;
-    } else if (tab.auth.type === 'basic' && tab.auth.username) {
+    if (effectiveAuth.type === 'bearer' && effectiveAuth.token) {
+      headers['Authorization'] = `Bearer ${r(effectiveAuth.token)}`;
+    } else if (effectiveAuth.type === 'oauth2' && effectiveAuth.accessToken) {
+      const prefix = effectiveAuth.headerPrefix?.trim() || 'Bearer';
+      headers['Authorization'] = `${prefix} ${r(effectiveAuth.accessToken)}`;
+    } else if (effectiveAuth.type === 'basic' && effectiveAuth.username) {
       const encoded = btoa(
-        `${r(tab.auth.username)}:${r(tab.auth.password ?? '')}`,
+        `${r(effectiveAuth.username)}:${r(effectiveAuth.password ?? '')}`,
       );
       headers['Authorization'] = `Basic ${encoded}`;
-    } else if (tab.auth.type === 'apikey' && tab.auth.key) {
-      if (tab.auth.addTo === 'header') {
-        headers[r(tab.auth.key)] = r(tab.auth.value);
+    } else if (effectiveAuth.type === 'apikey' && effectiveAuth.key) {
+      if (effectiveAuth.addTo === 'header') {
+        headers[r(effectiveAuth.key)] = r(effectiveAuth.value);
       } else {
-        queryParams[r(tab.auth.key)] = r(tab.auth.value);
+        queryParams[r(effectiveAuth.key)] = r(effectiveAuth.value);
       }
-    } else if (tab.auth.type === 'digest') {
+    } else if (effectiveAuth.type === 'digest') {
       resolvedAuth = {
         type: 'digest',
-        username: r(tab.auth.username),
-        password: r(tab.auth.password),
+        username: r(effectiveAuth.username),
+        password: r(effectiveAuth.password),
       };
-    } else if (tab.auth.type === 'aws') {
+    } else if (effectiveAuth.type === 'aws') {
       resolvedAuth = {
         type: 'aws',
-        accessKey: r(tab.auth.accessKey),
-        secretKey: r(tab.auth.secretKey),
-        region: r(tab.auth.region),
-        service: r(tab.auth.service),
-        sessionToken: tab.auth.sessionToken ? r(tab.auth.sessionToken) : undefined,
+        accessKey: r(effectiveAuth.accessKey),
+        secretKey: r(effectiveAuth.secretKey),
+        region: r(effectiveAuth.region),
+        service: r(effectiveAuth.service),
+        sessionToken: effectiveAuth.sessionToken
+          ? r(effectiveAuth.sessionToken)
+          : undefined,
       };
-    } else if (tab.auth.type === 'hawk') {
+    } else if (effectiveAuth.type === 'hawk') {
       resolvedAuth = {
         type: 'hawk',
-        hawkId: r(tab.auth.hawkId),
-        hawkKey: r(tab.auth.hawkKey),
-        algorithm: tab.auth.algorithm,
+        hawkId: r(effectiveAuth.hawkId),
+        hawkKey: r(effectiveAuth.hawkKey),
+        algorithm: effectiveAuth.algorithm,
       };
-    } else if (tab.auth.type === 'jwt') {
+    } else if (effectiveAuth.type === 'jwt') {
       resolvedAuth = {
         type: 'jwt',
-        secret: r(tab.auth.secret),
-        algorithm: tab.auth.algorithm,
-        payload: r(tab.auth.payload),
-        headerPrefix: tab.auth.headerPrefix ? r(tab.auth.headerPrefix) : 'Bearer',
+        secret: r(effectiveAuth.secret),
+        algorithm: effectiveAuth.algorithm,
+        payload: r(effectiveAuth.payload),
+        headerPrefix: effectiveAuth.headerPrefix
+          ? r(effectiveAuth.headerPrefix)
+          : 'Bearer',
       };
     }
 
@@ -379,7 +448,18 @@ export const useTabsStore = defineStore('tabs', () => {
     const tab = activeTab.value;
     if (!tab) return '';
     const ws = useWorkspaceStore();
-    const vars = { ...ws.activeVariablesMap, ...runtimeEnvOverrides.value };
+    const consoleStore = useConsoleStore();
+    const vaultMap: Record<string, string> = {};
+    for (const v of consoleStore.localVault) {
+      if (v.enabled && v.key.trim()) {
+        vaultMap[v.key.trim()] = v.value ?? '';
+      }
+    }
+    const vars = {
+      ...ws.activeVariablesMap,
+      ...vaultMap,
+      ...runtimeEnvOverrides.value,
+    };
     const { resolvedUrl, headers, resolvedBody } = buildResolvedRequest(tab, vars);
     return generateSnippet(lang, {
       method: tab.method,
@@ -396,11 +476,52 @@ export const useTabsStore = defineStore('tabs', () => {
     } catch {
       // ignore storage quota errors
     }
+    const ws = useWorkspaceStore();
+    if (ws.accessToken && ws.activeWorkspaceId) {
+      workspaceApi
+        .createHistory(ws.accessToken, ws.activeWorkspaceId, {
+          method: entry.method,
+          url: entry.url,
+          statusCode: entry.statusCode,
+          durationMs: entry.durationMs,
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  async function syncHistoryFromServer() {
+    const ws = useWorkspaceStore();
+    if (!ws.accessToken || !ws.activeWorkspaceId) return;
+    try {
+      const rows = await workspaceApi.listHistory(
+        ws.accessToken,
+        ws.activeWorkspaceId,
+        100,
+      );
+      if (rows.length) {
+        history.value = rows.map((r) => ({
+          id: r.id,
+          method: r.method,
+          url: r.url,
+          statusCode: r.statusCode ?? undefined,
+          durationMs: r.durationMs ?? undefined,
+          timestamp: r.createdAt,
+        }));
+      }
+    } catch {
+      // ignore
+    }
   }
 
   function clearHistory() {
     history.value = [];
     localStorage.removeItem(HISTORY_STORAGE_KEY);
+    const ws = useWorkspaceStore();
+    if (ws.accessToken && ws.activeWorkspaceId) {
+      workspaceApi
+        .clearHistory(ws.accessToken, ws.activeWorkspaceId)
+        .catch(() => undefined);
+    }
   }
 
   async function saveActiveTab(collectionId?: string, customName?: string) {
@@ -414,8 +535,11 @@ export const useTabsStore = defineStore('tabs', () => {
       url: tab.url,
       headers: tab.headers,
       queryParams: tab.queryParams,
+      pathParams: tab.pathParams,
       auth: tab.auth,
       body: tab.body,
+      examples: tab.examples,
+      settings: tab.settings,
       preRequestScript: tab.preRequestScript,
       testScript: tab.testScript,
     };
@@ -439,7 +563,7 @@ export const useTabsStore = defineStore('tabs', () => {
     }
 
     if (ws.activeWorkspaceId) {
-      await ws.loadWorkspaceData(ws.activeWorkspaceId);
+      await ws.refreshCollections(ws.activeWorkspaceId);
     }
   }
 
@@ -461,15 +585,20 @@ export const useTabsStore = defineStore('tabs', () => {
         vaultMap[v.key.trim()] = v.value ?? '';
       }
     }
+    const inherited = ws.getEffectiveCollectionAuthAndHeaders(tab.collectionId);
     let envSnapshot = {
       ...ws.activeVariablesMap,
+      ...inherited.variables,
       ...vaultMap,
       ...runtimeEnvOverrides.value,
     };
 
     if (tab.preRequestScript.trim()) {
+      const combinedPre = ws.sharedScript.trim()
+        ? `${ws.sharedScript}\n${tab.preRequestScript}`
+        : tab.preRequestScript;
       const preResult = await runScriptInSandbox({
-        script: tab.preRequestScript,
+        script: combinedPre,
         env: envSnapshot,
       });
       if (Object.keys(preResult.envUpdates).length) {
@@ -514,6 +643,16 @@ export const useTabsStore = defineStore('tabs', () => {
           ? executeBrowserDirectRequest
           : executeProxyRequest;
 
+      let matchedCert = undefined;
+      try {
+        const parsedTarget = new URL(resolvedUrl);
+        matchedCert = settings.clientCerts.find(
+          (c) => c.host.trim() && parsedTarget.host.includes(c.host.trim()),
+        );
+      } catch {
+        // ignore invalid url
+      }
+
       const res = await executor({
         method: tab.method,
         url: resolvedUrl,
@@ -521,7 +660,22 @@ export const useTabsStore = defineStore('tabs', () => {
         queryParams,
         auth: resolvedAuth,
         body: resolvedBody,
+        timeoutMs: tab.settings?.timeoutMs,
+        followRedirects: tab.settings?.followRedirects,
+        maxRedirects: tab.settings?.maxRedirects,
+        verifySsl: tab.settings?.verifySsl,
+        clientCert: matchedCert,
+        tunnelProxy: settings.tunnelProxy.url.trim()
+          ? {
+              url: settings.tunnelProxy.url.trim(),
+              username: settings.tunnelProxy.username || undefined,
+              password: settings.tunnelProxy.password || undefined,
+            }
+          : undefined,
       });
+      if (tab.response) {
+        tab.previousResponse = tab.response;
+      }
       tab.response = res;
       cookiesStore.captureFromResponseHeaders(resolvedUrl, res.headers);
       consoleStore.addLog({
@@ -534,8 +688,11 @@ export const useTabsStore = defineStore('tabs', () => {
       });
 
       if (tab.testScript.trim()) {
+        const combinedTest = ws.sharedScript.trim()
+          ? `${ws.sharedScript}\n${tab.testScript}`
+          : tab.testScript;
         const testOut = await runScriptInSandbox({
-          script: tab.testScript,
+          script: combinedTest,
           env: envSnapshot,
           response: {
             statusCode: res.statusCode,
@@ -596,6 +753,26 @@ export const useTabsStore = defineStore('tabs', () => {
     }
   }
 
+  async function saveResponseAsExample(exampleName?: string) {
+    const tab = activeTab.value;
+    if (!tab || !tab.response) return;
+    const example: ResponseExample = {
+      id: uid(),
+      name:
+        exampleName?.trim() ||
+        `${tab.response.statusCode} ${tab.response.statusText}`.trim(),
+      statusCode: tab.response.statusCode,
+      statusText: tab.response.statusText,
+      headers: tab.response.headers,
+      body: tab.response.body,
+      createdAt: new Date().toISOString(),
+    };
+    tab.examples = [example, ...(tab.examples ?? [])].slice(0, 10);
+    if (tab.savedRequestId) {
+      await saveActiveTab();
+    }
+  }
+
   return {
     tabs,
     activeTabId,
@@ -606,11 +783,14 @@ export const useTabsStore = defineStore('tabs', () => {
     openSavedRequest,
     closeTab,
     syncParamsFromUrl,
+    syncPathParamsFromUrl,
     syncUrlFromParams,
     importCurl,
     getSnippet,
     clearHistory,
+    syncHistoryFromServer,
     saveActiveTab,
+    saveResponseAsExample,
     sendActiveRequest,
     createEmptyRow,
   };

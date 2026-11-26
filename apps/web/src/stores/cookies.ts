@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
+import { supabase } from '../lib/supabase';
 
 export interface CookieEntry {
   id: string;
@@ -38,9 +39,25 @@ export const useCookiesStore = defineStore('cookies', () => {
       } catch {
         // ignore quota errors
       }
+      if (supabase) {
+        supabase.auth.getSession().then(({ data }) => {
+          if (data.session) {
+            supabase!.auth.updateUser({ data: { api_open_cookies: domains.value } }).catch(() => undefined);
+          }
+        });
+      }
     },
     { deep: true },
   );
+
+  async function syncFromCloud() {
+    if (!supabase) return;
+    const { data } = await supabase.auth.getUser();
+    const cloud = data.user?.user_metadata?.api_open_cookies as CookieDomainJar[] | undefined;
+    if (Array.isArray(cloud) && cloud.length) {
+      domains.value = cloud;
+    }
+  }
 
   function addDomain(domain: string) {
     const clean = domain.trim().toLowerCase();
@@ -129,5 +146,6 @@ export const useCookiesStore = defineStore('cookies', () => {
     clearAll,
     captureFromResponseHeaders,
     getCookieHeaderForUrl,
+    syncFromCloud,
   };
 });

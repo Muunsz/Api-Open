@@ -1,0 +1,14 @@
+-- AlterTable
+ALTER TABLE "Workspace"
+ADD COLUMN IF NOT EXISTS "summary" TEXT,
+ADD COLUMN IF NOT EXISTS "readme" TEXT;
+
+-- AlterTable
+ALTER TABLE "Collection"
+ADD COLUMN IF NOT EXISTS "auth" JSONB NOT NULL DEFAULT '{"type":"none"}',
+ADD COLUMN IF NOT EXISTS "headers" JSONB NOT NULL DEFAULT '[]';
+
+-- AlterTable
+ALTER TABLE "ApiRequest"
+ADD COLUMN IF NOT EXISTS "pathParams" JSONB NOT NULL DEFAULT '[]',
+ADD COLUMN IF NOT EXISTS "examples" JSONB NOT NULL DEFAULT '[]';

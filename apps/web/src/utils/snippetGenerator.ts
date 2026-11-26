@@ -1,6 +1,18 @@
 import type { BodyConfig, HttpMethod } from '@api-open/shared';
 
-export type SnippetLang = 'curl' | 'fetch' | 'axios' | 'go' | 'python';
+export type SnippetLang =
+  | 'curl'
+  | 'fetch'
+  | 'axios'
+  | 'go'
+  | 'python'
+  | 'php'
+  | 'java'
+  | 'csharp'
+  | 'ruby'
+  | 'rust'
+  | 'httpie'
+  | 'powershell';
 
 export interface SnippetInput {
   method: HttpMethod;
@@ -25,7 +37,9 @@ function resolveBodyString(input: SnippetInput): string | undefined {
   if (body.mode === 'graphql') {
     return JSON.stringify({
       query: body.graphql?.query ?? '',
-      variables: body.graphql?.variables ? JSON.parse(body.graphql.variables || '{}') : {},
+      variables: body.graphql?.variables
+        ? JSON.parse(body.graphql.variables || '{}')
+        : {},
     });
   }
   return undefined;
@@ -72,7 +86,10 @@ export function generateSnippet(lang: SnippetLang, input: SnippetInput): string 
 
     case 'go': {
       const headerLines = Object.entries(headers)
-        .map(([k, v]) => `\treq.Header.Set(${JSON.stringify(k)}, ${JSON.stringify(v)})`)
+        .map(
+          ([k, v]) =>
+            `\treq.Header.Set(${JSON.stringify(k)}, ${JSON.stringify(v)})`,
+        )
         .join('\n');
       const bodyInit =
         bodyStr !== undefined
@@ -102,6 +119,65 @@ export function generateSnippet(lang: SnippetLang, input: SnippetInput): string 
       lines.push(`response = requests.request(${args})`);
       lines.push('print(response.text)');
       return lines.join('\n');
+    }
+
+    case 'php': {
+      const hList = Object.entries(headers)
+        .map(([k, v]) => `    ${JSON.stringify(`${k}: ${v}`)}`)
+        .join(',\n');
+      return `<?php\n$curl = curl_init();\ncurl_setopt_array($curl, [\n  CURLOPT_URL => ${JSON.stringify(input.url)},\n  CURLOPT_RETURNTRANSFER => true,\n  CURLOPT_CUSTOMREQUEST => ${JSON.stringify(input.method)},\n${bodyStr !== undefined ? `  CURLOPT_POSTFIELDS => ${JSON.stringify(bodyStr)},\n` : ''}${hList ? `  CURLOPT_HTTPHEADER => [\n${hList}\n  ],\n` : ''}\n]);\n$response = curl_exec($curl);\ncurl_close($curl);\necho $response;`;
+    }
+
+    case 'java': {
+      const hLines = Object.entries(headers)
+        .map(
+          ([k, v]) =>
+            `  .addHeader(${JSON.stringify(k)}, ${JSON.stringify(v)})`,
+        )
+        .join('\n');
+      return `OkHttpClient client = new OkHttpClient();\n${bodyStr !== undefined ? `RequestBody body = RequestBody.create(${JSON.stringify(bodyStr)}, MediaType.parse("application/json"));\n` : ''}Request request = new Request.Builder()\n  .url(${JSON.stringify(input.url)})\n  .method(${JSON.stringify(input.method)}, ${bodyStr !== undefined ? 'body' : 'null'})\n${hLines ? hLines + '\n' : ''}  .build();\nResponse response = client.newCall(request).execute();\nSystem.out.println(response.body().string());`;
+    }
+
+    case 'csharp': {
+      const hLines = Object.entries(headers)
+        .map(
+          ([k, v]) =>
+            `request.Headers.TryAddWithoutValidation(${JSON.stringify(k)}, ${JSON.stringify(v)});`,
+        )
+        .join('\n');
+      return `using var client = new HttpClient();\nvar request = new HttpRequestMessage(HttpMethod.${input.method[0] + input.method.slice(1).toLowerCase()}, ${JSON.stringify(input.url)});\n${hLines ? hLines + '\n' : ''}${bodyStr !== undefined ? `request.Content = new StringContent(${JSON.stringify(bodyStr)}, System.Text.Encoding.UTF8, "application/json");\n` : ''}var response = await client.SendAsync(request);\nConsole.WriteLine(await response.Content.ReadAsStringAsync());`;
+    }
+
+    case 'ruby': {
+      const hLines = Object.entries(headers)
+        .map(([k, v]) => `request[${JSON.stringify(k)}] = ${JSON.stringify(v)}`)
+        .join('\n');
+      return `require 'uri'\nrequire 'net/http'\n\nurl = URI(${JSON.stringify(input.url)})\nhttp = Net::HTTP.new(url.host, url.port)\nhttp.use_ssl = url.scheme == 'https'\nrequest = Net::HTTP::${input.method[0] + input.method.slice(1).toLowerCase()}.new(url)\n${hLines ? hLines + '\n' : ''}${bodyStr !== undefined ? `request.body = ${JSON.stringify(bodyStr)}\n` : ''}response = http.request(request)\nputs response.read_body`;
+    }
+
+    case 'rust': {
+      const hLines = Object.entries(headers)
+        .map(([k, v]) => `        .header(${JSON.stringify(k)}, ${JSON.stringify(v)})`)
+        .join('\n');
+      return `#[tokio::main]\nasync fn main() -> Result<(), reqwest::Error> {\n    let client = reqwest::Client::new();\n    let res = client\n        .${input.method.toLowerCase()}(${JSON.stringify(input.url)})\n${hLines ? hLines + '\n' : ''}${bodyStr !== undefined ? `        .body(${JSON.stringify(bodyStr)})\n` : ''}        .send()\n        .await?\n        .text()\n        .await?;\n    println!("{}", res);\n    Ok(())\n}`;
+    }
+
+    case 'httpie': {
+      const args = [`http ${input.method} '${input.url}'`];
+      for (const [k, v] of Object.entries(headers)) {
+        args.push(`'${k}:${v}'`);
+      }
+      if (bodyStr !== undefined) {
+        return `echo '${bodyStr.replace(/'/g, `'\\''`)}' | ${args.join(' ')}`;
+      }
+      return args.join(' \\\n  ');
+    }
+
+    case 'powershell': {
+      const hPairs = Object.entries(headers)
+        .map(([k, v]) => `  ${JSON.stringify(k)} = ${JSON.stringify(v)}`)
+        .join('\n');
+      return `${hPairs ? `$headers = @{\n${hPairs}\n}\n` : ''}Invoke-RestMethod -Uri ${JSON.stringify(input.url)} -Method ${input.method}${hPairs ? ' -Headers $headers' : ''}${bodyStr !== undefined ? ` -Body ${JSON.stringify(bodyStr)}` : ''}`;
     }
   }
 }

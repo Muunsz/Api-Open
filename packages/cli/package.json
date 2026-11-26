@@ -1,0 +1,18 @@
+{
+  "name": "@api-open/cli",
+  "version": "0.1.0",
+  "description": "Standalone CLI runner for Api-Open / Postman / Hoppscotch collections",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "bin": {
+    "api-open": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "typescript": "^5.8.2"
+  }
+}
