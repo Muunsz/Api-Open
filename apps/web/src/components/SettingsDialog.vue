@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { resolveImageProxyUrl } from '../api/proxy';
 import { supabase } from '../lib/supabase';
@@ -51,6 +51,14 @@ function addClientCert() {
   newCertPass.value = '';
   ElMessage.success('Client certificate added');
 }
+
+const displayedAvatarUrl = computed(() =>
+  resolveImageProxyUrl(
+    profileAvatar.value ||
+      (ws.user?.user_metadata?.avatar_url as string | undefined) ||
+      (ws.user?.user_metadata?.picture as string | undefined),
+  ),
+);
 
 watch(
   () => props.visible,
@@ -250,8 +258,8 @@ async function handleChangePassword() {
           >
             <el-slider
               v-model="settings.sidebarWidth"
-              :min="200"
-              :max="480"
+              :min="220"
+              :max="560"
               :step="10"
             />
           </el-form-item>
@@ -306,7 +314,7 @@ async function handleChangePassword() {
       <el-tab-pane label="Profile" name="profile">
         <template v-if="ws.isAuthenticated">
           <div class="profile-preview">
-            <el-avatar :size="56" :src="resolveImageProxyUrl(profileAvatar)">
+            <el-avatar :size="56" :src="displayedAvatarUrl">
               {{ (profileName || ws.user?.email || 'U').slice(0, 1).toUpperCase() }}
             </el-avatar>
             <div style="flex: 1">

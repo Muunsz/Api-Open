@@ -37,12 +37,12 @@ const SETTINGS_KEY = 'api_open_settings_v1';
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   accentColor: '#3b82f6',
-  interceptor: 'proxy',
+  interceptor: 'browser',
   queryEncoding: 'auto',
   navbarPosition: 'top',
   sidebarPosition: 'left',
   sidebarHidden: false,
-  sidebarWidth: 280,
+  sidebarWidth: 340,
   sidebarHeight: 220,
   responsePosition: 'bottom',
   responseSizePercent: 45,
@@ -86,10 +86,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   const PROXY_KEY = 'api_open_custom_proxy_v1';
   const customProxyUrl = ref<string>(localStorage.getItem(PROXY_KEY) ?? '');
-  const savedProxyUrls = ref<string[]>([
-    'http://localhost:3001/api',
-    'https://api-proxy.internal/api',
-  ]);
+  const savedProxyUrls = ref<string[]>([]);
 
   watch(customProxyUrl, (val) => {
     try {
@@ -236,9 +233,9 @@ export const useSettingsStore = defineStore('settings', () => {
       const raw = localStorage.getItem(AI_KEY);
       return raw
         ? JSON.parse(raw)
-        : { provider: 'local', apiKey: '', model: '', ollamaUrl: 'http://localhost:11434' };
+        : { provider: 'local', apiKey: '', model: '', ollamaUrl: '' };
     } catch {
-      return { provider: 'local', apiKey: '', model: '', ollamaUrl: 'http://localhost:11434' };
+      return { provider: 'local', apiKey: '', model: '', ollamaUrl: '' };
     }
   })());
 

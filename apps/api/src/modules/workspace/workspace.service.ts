@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { WorkspaceRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { renderWorkspaceInviteEmail } from '../mail/email-templates';
 import { MailService } from '../mail/mail.service';
 
 @Injectable()
@@ -20,6 +21,29 @@ export class WorkspaceService {
       include: { workspace: true },
       orderBy: { createdAt: 'asc' },
     });
+
+    if (memberships.length === 0) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true },
+      });
+      if (user) {
+        const wsName = `${user.name || user.email.split('@')[0]}'s Workspace`;
+        const created = await this.prisma.workspace.create({
+          data: {
+            name: wsName,
+            type: 'PERSONAL',
+            members: {
+              create: {
+                userId,
+                role: 'OWNER',
+              },
+            },
+          },
+        });
+        return [{ ...created, role: WorkspaceRole.OWNER }];
+      }
+    }
 
     return memberships.map((m) => ({
       ...m.workspace,
@@ -128,27 +152,22 @@ export class WorkspaceService {
     const appUrl =
       process.env.CORS_ORIGIN?.split(',')[0]?.trim() || 'http://localhost:9999';
 
+    const renderedInvite = renderWorkspaceInviteEmail({
+      inviterLabel,
+      workspaceName: workspace.name,
+      role,
+      recipientEmail: email.trim(),
+      appUrl,
+    });
+
     const mailResult = await this.mailService.sendEmail({
       to: email.trim(),
-      subject: `Invitation to join "${workspace.name}" on Api-Open`,
+      subject: renderedInvite.subject,
       userId: inviterId,
       workspaceId,
       category: 'invite',
-      text: `${inviterLabel} invited you as ${role} to workspace "${workspace.name}" on Api-Open. Open ${appUrl} and sign in with ${email.trim()} to access it.`,
-      html: `
-        <div style="font-family: sans-serif; line-height: 1.6; max-width: 520px; margin: 0 auto;">
-          <h2 style="margin-bottom: 8px;">Workspace Invitation</h2>
-          <p><b>${inviterLabel}</b> invited you as <b>${role}</b> to collaborate in workspace <b>${workspace.name}</b> on <b>Api-Open</b>.</p>
-          <p style="margin: 20px 0;">
-            <a href="${appUrl}" style="display: inline-block; padding: 10px 18px; background: #409eff; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600;">
-              Open Api-Open Workspace
-            </a>
-          </p>
-          <p style="font-size: 13px; color: #666;">
-            Sign in or verify your email using <b>${email.trim()}</b> to access the shared workspace.
-          </p>
-        </div>
-      `,
+      text: renderedInvite.text,
+      html: renderedInvite.html,
     });
 
     return {
@@ -182,6 +201,12 @@ export class WorkspaceService {
         user: { select: { id: true, email: true, name: true, avatarUrl: true } },
       },
     });
+  }
+
+  async deleteWorkspace(workspaceId: string, actorId: string) {
+    await this.assertAccess(workspaceId, actorId, ['OWNER']);
+    await this.prisma.workspace.delete({ where: { id: workspaceId } });
+    return { deleted: true, id: workspaceId };
   }
 
   async removeMember(workspaceId: string, actorId: string, memberId: string) {

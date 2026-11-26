@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { Delete, FolderAdd } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { executeNativeGrpc, executeProxyRequest, reflectGrpcServer } from '../api/proxy';
@@ -23,10 +23,15 @@ const props = defineProps<{
 const wsStore = useWorkspaceStore();
 
 const mode = ref<RealtimeMode>(props.protocol);
-const url = ref(
-  props.protocol === 'ws'
-    ? 'wss://echo.websocket.events'
-    : 'https://stream.wikimedia.org/v2/stream/recentchange',
+const url = ref('');
+
+watch(
+  () => props.protocol,
+  (nextProto) => {
+    if (!connected.value && !connecting.value) {
+      mode.value = nextProto;
+    }
+  },
 );
 const mqttTopic = ref('api-open/test');
 const socketioEvent = ref('message');
@@ -148,7 +153,7 @@ async function handleProtoUpload(e: Event) {
       grpcSelectedMethod.value = rpcs[0].name;
       if (mode.value === 'grpc-web') {
         const base = url.value.replace(/\/[^/]+\/[^/]+$/, '').replace(/\/$/, '');
-        url.value = `${base || 'http://localhost:8080'}/${rpcs[0].service}/${rpcs[0].name}`;
+        url.value = base ? `${base}/${rpcs[0].service}/${rpcs[0].name}` : `/${rpcs[0].service}/${rpcs[0].name}`;
       }
     }
     ElMessage.success(`Parsed ${rpcs.length} RPC method(s) from ${file.name}`);
@@ -476,7 +481,7 @@ onUnmounted(() => {
       </el-select>
       <el-input
         v-model="url"
-        placeholder="wss://echo.websocket.events"
+        placeholder="Enter WebSocket / SSE / gRPC URL"
         clearable
       />
       <el-button
@@ -545,7 +550,7 @@ onUnmounted(() => {
               grpcSelectedMethod = rpc;
               if (mode === 'grpc-web') {
                 const base = url.replace(/\/[^/]+\/[^/]+$/, '').replace(/\/$/, '');
-                url = `${base || 'http://localhost:8080'}/${val}`;
+                url = base ? `${base}/${val}` : `/${val}`;
               }
             }
           "

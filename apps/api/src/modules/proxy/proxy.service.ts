@@ -1070,7 +1070,8 @@ export class ProxyService {
     const response = await fetch(parsedUrl.toString(), {
       method: 'GET',
       headers: {
-        Accept: 'image/*,*/*;q=0.8',
+        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        'User-Agent': 'Api-Open-Image-Proxy/1.0',
       },
       redirect: 'follow',
       signal: AbortSignal.timeout(10_000),
@@ -1083,7 +1084,11 @@ export class ProxyService {
     }
 
     const contentType = response.headers.get('content-type') ?? '';
-    if (!contentType.toLowerCase().startsWith('image/')) {
+    const lowerCt = contentType.toLowerCase();
+    if (
+      !lowerCt.startsWith('image/') &&
+      !lowerCt.includes('application/octet-stream')
+    ) {
       throw new BadRequestException('Target URL did not return an image');
     }
 

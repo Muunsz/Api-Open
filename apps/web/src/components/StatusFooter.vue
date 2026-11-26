@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { Expand, Fold, Monitor, QuestionFilled } from '@element-plus/icons-vue';
+import { Expand, Fold, Monitor, Picture, QuestionFilled } from '@element-plus/icons-vue';
+import { isDesktopAgentAvailable } from '../api/proxy';
 import { useConsoleStore } from '../stores/console';
 import { useSettingsStore } from '../stores/settings';
 import { useWorkspaceStore } from '../stores/workspace';
 
 defineEmits<{
   (e: 'open-cookies'): void;
+  (e: 'open-base64'): void;
   (e: 'toggle-console'): void;
   (e: 'open-support'): void;
   (e: 'open-shortcuts'): void;
 }>();
 
 const settings = useSettingsStore();
+const desktopAgentActive = computed(() => isDesktopAgentAvailable());
 const consoleStore = useConsoleStore();
 const ws = useWorkspaceStore();
 
@@ -43,14 +46,26 @@ const isResponseHorizontal = computed(
       <button
         type="button"
         class="footer-status footer-btn"
-        title="Interceptor Mode (click to toggle Proxy / Browser)"
+        :title="
+          desktopAgentActive
+            ? 'Desktop Local Agent Active (No CORS, Localhost Supported)'
+            : 'Interceptor Mode (click to toggle Browser / Proxy)'
+        "
         @click="
-          settings.interceptor =
-            settings.interceptor === 'proxy' ? 'browser' : 'proxy'
+          if (!desktopAgentActive) {
+            settings.interceptor =
+              settings.interceptor === 'proxy' ? 'browser' : 'proxy';
+          }
         "
       >
         <span class="status-dot" />
-        <span>{{ settings.interceptor === 'proxy' ? 'Proxy' : 'Browser' }}</span>
+        <span>{{
+          desktopAgentActive
+            ? 'Desktop Agent'
+            : settings.interceptor === 'proxy'
+              ? 'Proxy'
+              : 'Browser'
+        }}</span>
       </button>
       <button
         type="button"
@@ -59,6 +74,15 @@ const isResponseHorizontal = computed(
         @click="$emit('open-cookies')"
       >
         <span>Cookies</span>
+      </button>
+      <button
+        type="button"
+        class="footer-btn"
+        title="Base64 to Image Converter"
+        @click="$emit('open-base64')"
+      >
+        <el-icon><Picture /></el-icon>
+        <span>Base64 → Image</span>
       </button>
       <button
         type="button"

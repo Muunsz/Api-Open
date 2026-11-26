@@ -38,6 +38,11 @@ export const workspaceService = {
       body: JSON.stringify({ name }),
     }),
 
+  deleteWorkspace: (token: string, workspaceId: string) =>
+    apiFetch<{ deleted: boolean; id: string }>(`/workspaces/${workspaceId}`, token, {
+      method: 'DELETE',
+    }),
+
   updateWorkspace: (
     token: string,
     workspaceId: string,
@@ -217,7 +222,7 @@ export const workspaceService = {
   listEmailLogs: (token: string) =>
     apiFetch<EmailLogDto[]>('/workspaces/email-logs', token),
 
-  listHistory: (token: string, workspaceId: string, limit = 100) =>
+  listHistory: (token: string, workspaceId: string, limit = 35) =>
     apiFetch<HistoryRecordDto[]>(
       `/workspaces/${workspaceId}/history?limit=${limit}`,
       token,
@@ -325,6 +330,24 @@ export const workspaceService = {
         folders: Array<{ id: string; name: string; requests: ApiRequestDto[] }>;
       }>;
     }),
+
+  requestPasswordReset: async (email: string, redirectTo?: string) => {
+    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, redirectTo }),
+    });
+    if (!res.ok) {
+      const message = await res.text();
+      throw new Error(message || `Request failed: ${res.status}`);
+    }
+    return (await res.json()) as {
+      ok: boolean;
+      handled: boolean;
+      mode: string;
+      email: string;
+    };
+  },
 
   logAuthEmail: (payload: {
     to: string;

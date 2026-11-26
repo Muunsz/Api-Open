@@ -3,9 +3,15 @@ import { computed, ref } from 'vue';
 import type { AuthConfig, BodyConfig } from '@api-open/shared';
 import { Delete, Download, Upload, VideoPlay } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
-import { executeProxyRequest } from '../api/proxy';
+import {
+  executeBrowserDirectRequest,
+  executeDesktopDirectRequest,
+  executeProxyRequest,
+  isDesktopAgentAvailable,
+} from '../api/proxy';
 import type { ApiRequestDto } from '../api/workspace';
 import { downloadBlobFile } from '../services/exportService';
+import { useSettingsStore } from '../stores/settings';
 import { useTabsStore } from '../stores/tabs';
 import { type CollectionTreeNode, useWorkspaceStore } from '../stores/workspace';
 import { runScriptInSandbox, type TestCaseResult } from '../utils/scriptRunner';
@@ -16,6 +22,8 @@ const props = defineProps<{
   visible: boolean;
   collectionNode: CollectionTreeNode | null;
 }>();
+
+const settings = useSettingsStore();
 
 const emit = defineEmits<{
   'update:visible': [value: boolean];
@@ -75,7 +83,12 @@ async function runLoadTest() {
         if (performance.now() >= endAt) break;
         const t0 = performance.now();
         try {
-          const res = await executeProxyRequest({
+          const runnerExecutor = isDesktopAgentAvailable()
+            ? executeDesktopDirectRequest
+            : settings.interceptor === 'browser'
+              ? executeBrowserDirectRequest
+              : executeProxyRequest;
+          const res = await runnerExecutor({
             method: req.method,
             url: applyPathParamsToUrl(resolveVariables(req.url, env), req.pathParams ?? [], (v) => resolveVariables(v, env)),
             body: req.body,
@@ -329,7 +342,12 @@ async function startRun() {
       };
 
       try {
-        const res = await executeProxyRequest({
+        const runnerExecutor = isDesktopAgentAvailable()
+          ? executeDesktopDirectRequest
+          : settings.interceptor === 'browser'
+            ? executeBrowserDirectRequest
+            : executeProxyRequest;
+        const res = await runnerExecutor({
           method: req.method,
           url: resolvedUrl,
           headers,

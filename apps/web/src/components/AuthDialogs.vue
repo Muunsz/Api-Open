@@ -27,6 +27,15 @@ const newAccountPassword = ref('');
 const confirmAccountPassword = ref('');
 const savingPassword = ref(false);
 
+const resetModalVisible = ref(false);
+const resetEmail = ref('');
+const sendingResetEmail = ref(false);
+const resetEmailSent = ref(false);
+
+const pendingLoginPassword = ref('');
+const resendingVerification = ref(false);
+const checkingVerification = ref(false);
+
 watch(
   () => ws.needsPasswordSetup,
   (val) => {
@@ -42,9 +51,14 @@ async function handleAuthSubmit() {
   authSubmitting.value = true;
   try {
     if (authMode.value === 'login') {
+      pendingLoginPassword.value = authPassword.value;
       await ws.signIn(authEmail.value.trim(), authPassword.value);
-      ElMessage.success('Signed in');
       emit('update:authVisible', false);
+      if (ws.needsEmailVerification) {
+        ElMessage.warning('Please verify your email address first');
+      } else {
+        ElMessage.success('Signed in');
+      }
     } else if (authMode.value === 'register') {
       await ws.signUp(authEmail.value.trim(), authPassword.value);
       ElMessage.success('Verification email sent! Check your inbox to verify.');
@@ -55,29 +69,49 @@ async function handleAuthSubmit() {
       emit('update:authVisible', false);
     }
   } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : 'Auth failed');
+    if (err instanceof Error && err.message === 'EMAIL_NOT_CONFIRMED') {
+      emit('update:authVisible', false);
+      ElMessage.warning('Your account is not verified yet. Please verify your email first.');
+    } else {
+      ElMessage.error(err instanceof Error ? err.message : 'Auth failed');
+    }
   } finally {
     authSubmitting.value = false;
   }
 }
 
+function openResetPasswordModal() {
+  resetEmail.value = authEmail.value.trim();
+  resetEmailSent.value = false;
+  emit('update:authVisible', false);
+  resetModalVisible.value = true;
+}
+
+function backToSignInFromReset() {
+  if (resetEmail.value.trim()) {
+    authEmail.value = resetEmail.value.trim();
+  }
+  resetModalVisible.value = false;
+  emit('update:authVisible', true);
+}
+
 async function handleResetPasswordEmail() {
-  if (!authEmail.value.trim()) {
-    ElMessage.warning(
-      'Enter your email first to receive the Set / Reset Password link',
-    );
+  const targetEmail = resetEmail.value.trim();
+  if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+    ElMessage.warning('Please enter a valid email address');
     return;
   }
-  authSubmitting.value = true;
+  sendingResetEmail.value = true;
   try {
-    await ws.resetPasswordForEmail(authEmail.value.trim());
-    ElMessage.success('Password setup / reset email sent! Check your inbox.');
+    await ws.resetPasswordForEmail(targetEmail);
+    resetEmailSent.value = true;
+    ElMessage.success('Password reset email sent! Check your inbox.');
   } catch (err) {
     ElMessage.error(
       err instanceof Error ? err.message : 'Failed to send password email',
     );
   } finally {
-    authSubmitting.value = false;
+    sendingResetEmail.value = false;
   }
 }
 
@@ -96,6 +130,64 @@ async function handleResendVerification() {
     );
   } finally {
     authSubmitting.value = false;
+  }
+}
+
+async function handleResendPendingVerification() {
+  const targetEmail = ws.pendingVerificationEmail || authEmail.value.trim();
+  if (!targetEmail) {
+    ElMessage.warning('No email address found for verification');
+    return;
+  }
+  resendingVerification.value = true;
+  try {
+    await ws.resendVerification(targetEmail);
+    ElMessage.success(`Verification email sent to ${targetEmail}`);
+  } catch (err) {
+    ElMessage.error(
+      err instanceof Error ? err.message : 'Failed to resend verification email',
+    );
+  } finally {
+    resendingVerification.value = false;
+  }
+}
+
+async function handleCheckVerificationStatus() {
+  checkingVerification.value = true;
+  try {
+    if (ws.isAuthenticated) {
+      const verified = await ws.checkEmailVerification();
+      if (verified) {
+        pendingLoginPassword.value = '';
+        ElMessage.success('Email verified! Welcome to Api-Open.');
+      } else {
+        ElMessage.warning('Email is still not verified. Please click the link in your inbox.');
+      }
+      return;
+    }
+
+    if (ws.pendingVerificationEmail && pendingLoginPassword.value) {
+      await ws.signIn(ws.pendingVerificationEmail, pendingLoginPassword.value);
+      if (!ws.needsEmailVerification) {
+        pendingLoginPassword.value = '';
+        ElMessage.success('Email verified! Signed in successfully.');
+      } else {
+        ElMessage.warning('Email is still not verified. Please click the link in your inbox.');
+      }
+      return;
+    }
+
+    ElMessage.info('Click the verification link sent to your email, then try again.');
+  } catch (err) {
+    if (err instanceof Error && err.message === 'EMAIL_NOT_CONFIRMED') {
+      ElMessage.warning('Email is still not verified. Please check your inbox.');
+    } else {
+      ElMessage.error(
+        err instanceof Error ? err.message : 'Verification check failed',
+      );
+    }
+  } finally {
+    checkingVerification.value = false;
   }
 }
 
@@ -220,9 +312,9 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
               type="primary"
               size="small"
               :disabled="authSubmitting"
-              @click="handleResetPasswordEmail"
+              @click="openResetPasswordModal"
             >
-              Forgot / Set Password?
+              Forgot / Reset Password?
             </el-button>
           </div>
         </template>
@@ -307,18 +399,144 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
     </div>
   </el-dialog>
 
+  <!-- Forgot / Reset Password Dialog -->
+  <el-dialog
+    v-model="resetModalVisible"
+    width="min(92vw, 410px)"
+    align-center
+    class="auth-modal-dialog"
+  >
+    <template #header>
+      <div class="auth-dialog-header">
+        <div class="reset-badge">Password Recovery</div>
+        <div class="reset-title">Reset your password</div>
+        <span class="auth-subtitle">
+          Enter your account email and we&apos;ll send a secure link to set a new password.
+        </span>
+      </div>
+    </template>
+
+    <template v-if="!resetEmailSent">
+      <el-form label-position="top" class="auth-form" @submit.prevent="handleResetPasswordEmail">
+        <el-form-item label="Account Email">
+          <el-input
+            v-model="resetEmail"
+            size="large"
+            type="email"
+            placeholder="you@example.com"
+          />
+        </el-form-item>
+
+        <el-button
+          type="primary"
+          size="large"
+          native-type="submit"
+          :loading="sendingResetEmail"
+          class="auth-submit-btn"
+        >
+          Send Reset Link
+        </el-button>
+      </el-form>
+
+      <div class="reset-footer-actions">
+        <el-button link type="primary" size="small" @click="backToSignInFromReset">
+          Back to Sign In
+        </el-button>
+      </div>
+    </template>
+
+    <template v-else>
+      <div class="reset-sent-card">
+        <div class="reset-sent-title">Check your inbox</div>
+        <p class="reset-sent-desc">
+          We sent a password reset link to <strong>{{ resetEmail }}</strong>. Open the link in your email to set a new password.
+        </p>
+      </div>
+
+      <div class="reset-sent-actions">
+        <el-button
+          size="large"
+          :loading="sendingResetEmail"
+          style="flex: 1"
+          @click="handleResetPasswordEmail"
+        >
+          Resend Link
+        </el-button>
+        <el-button
+          type="primary"
+          size="large"
+          style="flex: 1"
+          @click="backToSignInFromReset"
+        >
+          Back to Sign In
+        </el-button>
+      </div>
+    </template>
+  </el-dialog>
+
+  <!-- Non-closable Email Verification Required Dialog -->
+  <el-dialog
+    :model-value="ws.needsEmailVerification"
+    :show-close="false"
+    :close-on-click-modal="false"
+    :close-on-press-escape="false"
+    width="min(92vw, 410px)"
+    align-center
+    class="auth-modal-dialog"
+  >
+    <template #header>
+      <div class="auth-dialog-header">
+        <div class="verify-badge">Verification Required</div>
+        <div class="reset-title">Verify your account first</div>
+        <span class="auth-subtitle">
+          Your email address has not been verified yet. Please verify your account to continue.
+        </span>
+      </div>
+    </template>
+
+    <div class="reset-sent-card">
+      <div class="reset-sent-title">Pending Email Verification</div>
+      <p class="reset-sent-desc">
+        We sent a verification link to
+        <strong>{{ ws.pendingVerificationEmail || authEmail }}</strong>.
+        Open the link in your inbox, then click <strong>I&apos;ve Verified My Email</strong> below.
+      </p>
+    </div>
+
+    <div class="verify-actions">
+      <el-button
+        type="primary"
+        size="large"
+        :loading="checkingVerification"
+        style="width: 100%"
+        @click="handleCheckVerificationStatus"
+      >
+        I&apos;ve Verified My Email
+      </el-button>
+      <el-button
+        size="large"
+        :loading="resendingVerification"
+        style="width: 100%; margin-left: 0"
+        @click="handleResendPendingVerification"
+      >
+        Resend Verification Email
+      </el-button>
+    </div>
+  </el-dialog>
+
   <!-- Set / Update Password Dialog -->
   <el-dialog
     :model-value="passwordVisible"
     title="Set / Update Password"
-    width="min(92vw, 380px)"
+    width="min(92vw, 390px)"
     align-center
     @update:model-value="emit('update:passwordVisible', $event)"
   >
-    <el-form label-position="top" @submit.prevent="handleSaveNewPassword">
+    <el-form label-position="top" class="auth-form" @submit.prevent="handleSaveNewPassword">
       <el-form-item label="New Password">
         <el-input
           v-model="newAccountPassword"
+          size="large"
           type="password"
           placeholder="Minimum 6 characters"
           show-password
@@ -327,6 +545,7 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
       <el-form-item label="Confirm Password">
         <el-input
           v-model="confirmAccountPassword"
+          size="large"
           type="password"
           placeholder="Repeat new password"
           show-password
@@ -334,9 +553,10 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
       </el-form-item>
       <el-button
         type="primary"
+        size="large"
         native-type="submit"
         :loading="savingPassword"
-        style="width: 100%"
+        class="auth-submit-btn"
       >
         Save Password
       </el-button>
@@ -446,5 +666,65 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
   display: flex;
   gap: 6px;
   margin-top: 8px;
+}
+.reset-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--el-color-primary);
+  background: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
+}
+.reset-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ao-text);
+}
+.reset-footer-actions {
+  margin-top: 12px;
+  text-align: center;
+}
+.reset-sent-card {
+  background: var(--ao-surface-2);
+  border: 1px solid var(--ao-border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+.reset-sent-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ao-text);
+  margin-bottom: 6px;
+}
+.reset-sent-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ao-text-muted);
+}
+.reset-sent-actions {
+  display: flex;
+  gap: 8px;
+}
+.verify-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.16);
+}
+.verify-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 </style>

@@ -80,7 +80,7 @@ function handleTreeNodeClick(node: CollectionTreeNode) {
             v-if="ws.collectionTree.length"
             :data="ws.collectionTree"
             node-key="id"
-            default-expand-all
+            highlight-current
             @node-click="handleTreeNodeClick"
           />
           <el-empty v-else description="No collections yet" :image-size="54" />

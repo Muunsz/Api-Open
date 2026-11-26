@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import {
   ArrowDown,
   Bell,
+  Delete,
   Download,
   Edit,
   Menu,
@@ -11,7 +12,7 @@ import {
   Setting,
   Sunny,
 } from '@element-plus/icons-vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { resolveImageProxyUrl } from '../services/proxyService';
 import { useConsoleStore } from '../stores/console';
 import { useSettingsStore } from '../stores/settings';
@@ -45,6 +46,14 @@ const quickNewWorkspaceName = ref('');
 const quickNewEnvName = ref('');
 const notifTab = ref<NotificationTab>('all');
 
+const userAvatarSrc = computed(() =>
+  resolveImageProxyUrl(
+    ws.profile?.avatarUrl ||
+      (ws.user?.user_metadata?.avatar_url as string | undefined) ||
+      (ws.user?.user_metadata?.picture as string | undefined),
+  ),
+);
+
 const filteredNotifications = computed(() => {
   if (notifTab.value === 'all') return consoleStore.logs.slice(0, 20);
   return consoleStore.logs
@@ -62,6 +71,28 @@ async function handleQuickCreateWorkspace() {
     ElMessage.error(
       err instanceof Error ? err.message : 'Failed to create workspace',
     );
+  }
+}
+
+async function handleDeleteWorkspaceOption(id: string, name: string) {
+  try {
+    await ElMessageBox.confirm(
+      `Delete workspace "${name}" and all its collections, environments, and history?`,
+      'Delete Workspace',
+      {
+        type: 'warning',
+        confirmButtonText: 'Delete',
+        cancelButtonText: 'Cancel',
+      },
+    );
+    await ws.deleteWorkspace(id);
+    ElMessage.success(`Workspace "${name}" deleted`);
+  } catch (err) {
+    if (err !== 'cancel' && err !== 'close') {
+      ElMessage.error(
+        err instanceof Error ? err.message : 'Failed to delete workspace',
+      );
+    }
   }
 }
 
@@ -173,7 +204,18 @@ async function handleQuickCreateEnv() {
           >
             <div class="select-opt-row">
               <span class="select-opt-name">{{ w.name }}</span>
-              <el-tag size="small" effect="plain">{{ w.type }}</el-tag>
+              <div style="display: flex; align-items: center; gap: 6px">
+                <el-tag size="small" effect="plain">{{ w.type }}</el-tag>
+                <el-button
+                  v-if="w.role === 'OWNER'"
+                  :icon="Delete"
+                  link
+                  type="danger"
+                  size="small"
+                  title="Delete Workspace"
+                  @click.stop="handleDeleteWorkspaceOption(w.id, w.name)"
+                />
+              </div>
             </div>
           </el-option>
           <template #footer>
@@ -367,7 +409,7 @@ async function handleQuickCreateEnv() {
           <button type="button" class="user-btn">
             <el-avatar
               :size="22"
-              :src="resolveImageProxyUrl(ws.profile?.avatarUrl)"
+              :src="userAvatarSrc"
               class="user-avatar"
             >
               {{

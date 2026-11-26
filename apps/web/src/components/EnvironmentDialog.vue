@@ -18,6 +18,7 @@ const emit = defineEmits<{
 const ws = useWorkspaceStore();
 const newEnvName = ref('');
 const editingEnvId = ref('');
+const deletingEnv = ref(false);
 const editingEnvVars = ref<EnvVariable[]>([]);
 const envFileInput = ref<HTMLInputElement | null>(null);
 
@@ -163,6 +164,22 @@ function addEnvVarRow() {
   });
 }
 
+async function handleDeleteEnv() {
+  if (!editingEnvId.value) return;
+  deletingEnv.value = true;
+  try {
+    await ws.deleteEnvironment(editingEnvId.value);
+    ElMessage.success('Environment deleted');
+    emit('update:visible', false);
+  } catch (err) {
+    ElMessage.error(
+      err instanceof Error ? err.message : 'Failed to delete environment',
+    );
+  } finally {
+    deletingEnv.value = false;
+  }
+}
+
 async function saveEnvVars() {
   if (!editingEnvId.value) return;
   try {
@@ -227,7 +244,8 @@ async function saveEnvVars() {
           size="small"
           type="danger"
           plain
-          @click="ws.deleteEnvironment(editingEnvId)"
+          :loading="deletingEnv"
+          @click="handleDeleteEnv"
         >
           Delete Env
         </el-button>

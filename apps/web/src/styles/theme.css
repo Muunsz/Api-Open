@@ -193,3 +193,8 @@ html.dark .kt-card {
   padding-left: 2px;
   padding-right: 2px;
 }
+
+.tree-node-dropdown-menu {
+  max-height: min(65vh, 420px);
+  overflow-y: auto;
+}

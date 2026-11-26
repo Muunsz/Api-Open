@@ -11,7 +11,9 @@ import type {
 } from '@api-open/shared';
 import {
   executeBrowserDirectRequest,
+  executeDesktopDirectRequest,
   executeProxyRequest,
+  isDesktopAgentAvailable,
 } from '../api/proxy';
 import { type ApiRequestDto, workspaceApi } from '../api/workspace';
 import { parseCurlCommand } from '../utils/curlParser';
@@ -118,13 +120,16 @@ function createDefaultTab(partial?: Partial<RequestTab>): RequestTab {
 }
 
 const HISTORY_STORAGE_KEY = 'api_open_history_v1';
+const MAX_HISTORY_ENTRIES = 35;
 const TABS_STORAGE_KEY = 'api_open_tabs_v1';
 const RUNTIME_ENV_STORAGE_KEY = 'api_open_runtime_env_v1';
 
 function loadHistory(): HistoryEntry[] {
   try {
     const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as HistoryEntry[]) : [];
+    return raw
+      ? (JSON.parse(raw) as HistoryEntry[]).slice(0, MAX_HISTORY_ENTRIES)
+      : [];
   } catch {
     return [];
   }
@@ -470,7 +475,7 @@ export const useTabsStore = defineStore('tabs', () => {
   }
 
   function saveHistory(entry: HistoryEntry) {
-    history.value = [entry, ...history.value].slice(0, 50);
+    history.value = [entry, ...history.value].slice(0, MAX_HISTORY_ENTRIES);
     try {
       localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history.value));
     } catch {
@@ -496,10 +501,10 @@ export const useTabsStore = defineStore('tabs', () => {
       const rows = await workspaceApi.listHistory(
         ws.accessToken,
         ws.activeWorkspaceId,
-        100,
+        MAX_HISTORY_ENTRIES,
       );
       if (rows.length) {
-        history.value = rows.map((r) => ({
+        history.value = rows.slice(0, MAX_HISTORY_ENTRIES).map((r) => ({
           id: r.id,
           method: r.method,
           url: r.url,
@@ -507,6 +512,14 @@ export const useTabsStore = defineStore('tabs', () => {
           durationMs: r.durationMs ?? undefined,
           timestamp: r.createdAt,
         }));
+        try {
+          localStorage.setItem(
+            HISTORY_STORAGE_KEY,
+            JSON.stringify(history.value),
+          );
+        } catch {
+          // ignore storage quota errors
+        }
       }
     } catch {
       // ignore
@@ -638,8 +651,9 @@ export const useTabsStore = defineStore('tabs', () => {
     }
 
     try {
-      const executor =
-        settings.interceptor === 'browser'
+      const executor = isDesktopAgentAvailable()
+        ? executeDesktopDirectRequest
+        : settings.interceptor === 'browser'
           ? executeBrowserDirectRequest
           : executeProxyRequest;
 

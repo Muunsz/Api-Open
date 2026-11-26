@@ -161,6 +161,81 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const loadingData = ref(false);
   const busyCount = ref(0);
   const isBusy = computed(() => loadingData.value || busyCount.value > 0);
+  const operationProgress = ref<{
+    active: boolean;
+    label: string;
+    detail: string;
+    current: number;
+    total: number;
+    percent: number;
+  }>({
+    active: false,
+    label: '',
+    detail: '',
+    current: 0,
+    total: 0,
+    percent: 0,
+  });
+
+  function startOperationProgress(label: string, total: number) {
+    operationProgress.value = {
+      active: true,
+      label,
+      detail: 'Preparing...',
+      current: 0,
+      total: Math.max(1, total),
+      percent: 0,
+    };
+  }
+
+  function advanceOperationProgress(detail?: string, step = 1) {
+    if (!operationProgress.value.active) return;
+    const nextCurrent = Math.min(
+      operationProgress.value.total,
+      operationProgress.value.current + step,
+    );
+    const nextPercent = Math.min(
+      99,
+      Math.round((nextCurrent / operationProgress.value.total) * 100),
+    );
+    operationProgress.value = {
+      ...operationProgress.value,
+      current: nextCurrent,
+      percent: nextPercent,
+      detail: detail ?? operationProgress.value.detail,
+    };
+  }
+
+  function finishOperationProgress() {
+    if (!operationProgress.value.active) return;
+    operationProgress.value = {
+      ...operationProgress.value,
+      current: operationProgress.value.total,
+      percent: 100,
+      detail: 'Completed',
+    };
+    window.setTimeout(() => {
+      operationProgress.value = {
+        active: false,
+        label: '',
+        detail: '',
+        current: 0,
+        total: 0,
+        percent: 0,
+      };
+    }, 450);
+  }
+
+  function resetOperationProgress() {
+    operationProgress.value = {
+      active: false,
+      label: '',
+      detail: '',
+      current: 0,
+      total: 0,
+      percent: 0,
+    };
+  }
   async function withBusy<T>(fn: () => Promise<T>): Promise<T> {
     busyCount.value++;
     try {
@@ -189,6 +264,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   });
 
   const needsPasswordSetup = ref(false);
+  const needsEmailVerification = ref(false);
+  const pendingVerificationEmail = ref('');
   const isAuthenticated = computed(() => Boolean(accessToken.value && user.value));
   const currentUserRole = computed(() => {
     const wsObj = workspaces.value.find((w) => w.id === activeWorkspaceId.value);
@@ -245,6 +322,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return roots;
   });
 
+  const WORKSPACE_SYNC_TTL_MS = 50 * 60 * 1000;
+  let lastWorkspaceSyncAt = 0;
+  let lastSyncedUserId = '';
+  let authInitialized = false;
+
   function clearSessionState() {
     user.value = null;
     accessToken.value = null;
@@ -257,6 +339,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     onlinePeers.value = [];
     loadedMembersWsId.value = '';
     loadedMonitorsWsId.value = '';
+    lastWorkspaceSyncAt = 0;
+    lastSyncedUserId = '';
     needsPasswordSetup.value = false;
     environments.value = loadLocalEnvironments();
     if (
@@ -267,13 +351,80 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  function isUserEmailVerified(u: User | null): boolean {
+    if (!u) return false;
+    return Boolean(
+      u.email_confirmed_at ||
+        (u as { confirmed_at?: string | null }).confirmed_at,
+    );
+  }
+
+  async function maybeSendOAuthSetPasswordEmail(currentUser: User | null) {
+    if (!currentUser?.email || !supabase) return;
+    const provider = String(currentUser.app_metadata?.provider ?? '').toLowerCase();
+    const providers = Array.isArray(currentUser.app_metadata?.providers)
+      ? (currentUser.app_metadata.providers as string[]).map((p) =>
+          p.toLowerCase(),
+        )
+      : [];
+
+    const isOAuth =
+      ['google', 'github', 'discord'].includes(provider) ||
+      providers.some((p) => ['google', 'github', 'discord'].includes(p));
+    if (!isOAuth || providers.includes('email')) return;
+
+    const meta = (currentUser.user_metadata ?? {}) as Record<string, unknown>;
+    if (meta.has_password === true || meta.set_password_email_sent === true) {
+      return;
+    }
+
+    const storageKey = `api_open_oauth_pw_email_${currentUser.id}`;
+    try {
+      if (localStorage.getItem(storageKey)) return;
+      localStorage.setItem(storageKey, '1');
+    } catch {
+      // ignore storage errors
+    }
+
+    try {
+      await supabase.auth.updateUser({
+        data: { set_password_email_sent: true },
+      });
+      await resetPasswordForEmail(currentUser.email);
+    } catch {
+      // keep silent if rate-limited or mail fails
+    }
+  }
+
   async function initAuth() {
-    if (!supabase) return;
+    if (!supabase || authInitialized) return;
+    authInitialized = true;
     const { data } = await supabase.auth.getSession();
     user.value = data.session?.user ?? null;
     accessToken.value = data.session?.access_token ?? null;
+    if (user.value && !isUserEmailVerified(user.value)) {
+      pendingVerificationEmail.value = user.value.email ?? '';
+      needsEmailVerification.value = true;
+    } else {
+      needsEmailVerification.value = false;
+      pendingVerificationEmail.value = '';
+    }
     if (accessToken.value) {
       await loadWorkspaces();
+      maybeSendOAuthSetPasswordEmail(user.value);
+    }
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (
+          document.visibilityState === 'visible' &&
+          accessToken.value &&
+          lastWorkspaceSyncAt > 0 &&
+          Date.now() - lastWorkspaceSyncAt >= WORKSPACE_SYNC_TTL_MS
+        ) {
+          loadWorkspaces().catch(() => undefined);
+        }
+      });
     }
 
     supabase.auth.onAuthStateChange(async (event, session) => {
@@ -284,11 +435,31 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const prevToken = accessToken.value;
       user.value = session?.user ?? null;
       accessToken.value = session?.access_token ?? null;
+      if (user.value && !isUserEmailVerified(user.value)) {
+        pendingVerificationEmail.value = user.value.email ?? '';
+        needsEmailVerification.value = true;
+      } else if (user.value && isUserEmailVerified(user.value)) {
+        needsEmailVerification.value = false;
+        pendingVerificationEmail.value = '';
+      }
       if (event === 'TOKEN_REFRESHED' && prevToken && accessToken.value) {
         return;
       }
       if (accessToken.value) {
+        const currentUserId = user.value?.id ?? '';
+        const isSameUser = Boolean(
+          currentUserId && currentUserId === lastSyncedUserId,
+        );
+        const isWithinTtl =
+          lastWorkspaceSyncAt > 0 &&
+          Date.now() - lastWorkspaceSyncAt < WORKSPACE_SYNC_TTL_MS;
+        if (isSameUser && isWithinTtl && workspaces.value.length > 0) {
+          return;
+        }
         await loadWorkspaces();
+        if (event === 'SIGNED_IN') {
+          maybeSendOAuthSetPasswordEmail(user.value);
+        }
       } else {
         clearSessionState();
       }
@@ -297,11 +468,31 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function signIn(email: string, password: string) {
     if (!supabase) throw new Error('Supabase is not configured');
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    const cleanEmail = email.trim();
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
+    if (error) {
+      const msg = error.message?.toLowerCase() ?? '';
+      const code = (error as { code?: string }).code;
+      if (msg.includes('email not confirmed') || code === 'email_not_confirmed') {
+        pendingVerificationEmail.value = cleanEmail;
+        needsEmailVerification.value = true;
+        throw new Error('EMAIL_NOT_CONFIRMED');
+      }
+      throw error;
+    }
     if (data.session) {
       user.value = data.session.user;
       accessToken.value = data.session.access_token;
+      if (!isUserEmailVerified(data.session.user)) {
+        pendingVerificationEmail.value = data.session.user.email ?? cleanEmail;
+        needsEmailVerification.value = true;
+      } else {
+        needsEmailVerification.value = false;
+        pendingVerificationEmail.value = '';
+      }
       await loadWorkspaces();
     }
   }
@@ -345,12 +536,21 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function resetPasswordForEmail(email: string) {
+    const cleanEmail = email.trim();
+    const backendResult = await workspaceApi
+      .requestPasswordReset(cleanEmail, window.location.origin)
+      .catch(() => null);
+
+    if (backendResult?.handled) {
+      return;
+    }
+
     if (!supabase) throw new Error('Supabase is not configured');
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
       redirectTo: window.location.origin,
     });
     workspaceApi.logAuthEmail({
-      to: email,
+      to: cleanEmail,
       subject: 'Set / Reset Password Email',
       category: 'auth_password_reset',
       status: error ? 'failed' : 'sent',
@@ -403,7 +603,24 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  async function checkEmailVerification(): Promise<boolean> {
+    if (!supabase) return false;
+    await supabase.auth.refreshSession().catch(() => undefined);
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) return false;
+    user.value = data.user;
+    if (isUserEmailVerified(data.user)) {
+      needsEmailVerification.value = false;
+      pendingVerificationEmail.value = '';
+      await loadWorkspaces();
+      return true;
+    }
+    return false;
+  }
+
   async function signOut() {
+    needsEmailVerification.value = false;
+    pendingVerificationEmail.value = '';
     clearSessionState();
     if (!supabase) return;
     try {
@@ -582,7 +799,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         const [wsList, prof] = await Promise.all([
           workspaceApi.listWorkspaces(accessToken.value!),
           workspaceApi.getProfile(accessToken.value!),
-          storedWsId ? loadWorkspaceData(storedWsId) : Promise.resolve(),
         ]);
         workspaces.value = wsList;
         profile.value = prof;
@@ -597,12 +813,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         }
         const hasValidStored =
           storedWsId && workspaces.value.some((w) => w.id === storedWsId);
-        if (workspaces.value.length && !hasValidStored) {
+        if (hasValidStored) {
+          await loadWorkspaceData(storedWsId);
+        } else if (workspaces.value.length) {
           activeWorkspaceId.value = workspaces.value[0].id;
           await loadWorkspaceData(activeWorkspaceId.value);
-        } else if (!storedWsId && activeWorkspaceId.value) {
-          await loadWorkspaceData(activeWorkspaceId.value);
+        } else {
+          activeWorkspaceId.value = '';
+          collections.value = [];
         }
+        lastWorkspaceSyncAt = Date.now();
+        lastSyncedUserId = user.value?.id ?? '';
       } finally {
         loadingData.value = false;
         inFlightWorkspaces = null;
@@ -621,7 +842,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function updatePassword(newPassword: string) {
     if (!supabase) throw new Error('Supabase is not configured');
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+      data: { has_password: true },
+    });
     if (error) throw error;
     needsPasswordSetup.value = false;
   }
@@ -723,6 +947,21 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     await loadWorkspaces();
     activeWorkspaceId.value = created.id;
     await loadWorkspaceData(created.id);
+  }
+
+  async function deleteWorkspace(workspaceId: string) {
+    if (!accessToken.value) return;
+    await workspaceApi.deleteWorkspace(accessToken.value, workspaceId);
+    const wasActive = activeWorkspaceId.value === workspaceId;
+    workspaces.value = workspaces.value.filter((w) => w.id !== workspaceId);
+    if (wasActive || workspaces.value.length === 0) {
+      if (wasActive) {
+        activeWorkspaceId.value = '';
+        collections.value = [];
+        environments.value = [];
+      }
+      await loadWorkspaces();
+    }
   }
 
   async function updateWorkspaceMeta(payload: {
@@ -1068,6 +1307,58 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     await refreshEnvironments();
   }
 
+  function mergeImportedFolderInto(
+    targetFolders: ImportedCollectionNode[],
+    folder: ImportedCollectionNode,
+  ) {
+    const segments = folder.name
+      .split('/')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const pathSegments = segments.length ? segments : ['Folder'];
+
+    let currentList = targetFolders;
+    let leaf: ImportedCollectionNode | null = null;
+    for (const seg of pathSegments) {
+      let existing = currentList.find((f) => f.name === seg);
+      if (!existing) {
+        existing = { name: seg, folders: [], requests: [] };
+        currentList.push(existing);
+      }
+      leaf = existing;
+      currentList = existing.folders;
+    }
+
+    if (leaf) {
+      leaf.requests.push(...folder.requests);
+      for (const sub of folder.folders) {
+        mergeImportedFolderInto(leaf.folders, sub);
+      }
+    }
+  }
+
+  function normalizeImportedTree(
+    node: ImportedCollectionNode,
+  ): ImportedCollectionNode {
+    const mergedFolders: ImportedCollectionNode[] = [];
+    for (const folder of node.folders) {
+      mergeImportedFolderInto(mergedFolders, folder);
+    }
+    return {
+      name: node.name,
+      requests: [...node.requests],
+      folders: mergedFolders,
+    };
+  }
+
+  function countImportedItems(node: ImportedCollectionNode): number {
+    let count = 1 + node.requests.length;
+    for (const sub of node.folders) {
+      count += countImportedItems(sub);
+    }
+    return count;
+  }
+
   async function saveImportedNode(
     node: ImportedCollectionNode,
     parentId?: string,
@@ -1080,8 +1371,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         node.name,
         parentId,
       );
+      advanceOperationProgress(`Folder: ${node.name}`);
       for (const req of node.requests) {
         await workspaceApi.createRequest(accessToken.value!, createdCol.id, req);
+        advanceOperationProgress(`${req.method} ${req.name}`);
       }
       for (const sub of node.folders) {
         await saveImportedNode(sub, createdCol.id);
@@ -1089,40 +1382,54 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     });
   }
 
+  async function runImportWithProgress(
+    label: string,
+    rootNode: ImportedCollectionNode,
+    targetParentId?: string,
+  ) {
+    const totalSteps = countImportedItems(rootNode) + 1;
+    startOperationProgress(label, totalSteps);
+    try {
+      await saveImportedNode(rootNode, targetParentId);
+      advanceOperationProgress('Refreshing collections...', 0);
+      await refreshCollections();
+      finishOperationProgress();
+    } catch (err) {
+      resetOperationProgress();
+      throw err;
+    }
+  }
+
   async function importPostmanJson(jsonText: string) {
     if (!accessToken.value || !activeWorkspaceId.value) {
       throw new Error('Sign in first to import collections');
     }
-    const root = parsePostmanCollection(jsonText);
-    await saveImportedNode(root);
-    await refreshCollections();
+    const root = normalizeImportedTree(parsePostmanCollection(jsonText));
+    await runImportWithProgress(`Importing ${root.name}`, root);
   }
 
   async function importOpenApiJson(specText: string) {
     if (!accessToken.value || !activeWorkspaceId.value) {
       throw new Error('Sign in first to import OpenAPI spec');
     }
-    const root = parseOpenApiSpec(specText);
-    await saveImportedNode(root);
-    await refreshCollections();
+    const root = normalizeImportedTree(parseOpenApiSpec(specText));
+    await runImportWithProgress(`Importing ${root.name}`, root);
   }
 
   async function importInsomniaJson(jsonText: string) {
     if (!accessToken.value || !activeWorkspaceId.value) {
       throw new Error('Sign in first to import Insomnia collection');
     }
-    const root = parseInsomniaExport(jsonText);
-    await saveImportedNode(root);
-    await refreshCollections();
+    const root = normalizeImportedTree(parseInsomniaExport(jsonText));
+    await runImportWithProgress(`Importing ${root.name}`, root);
   }
 
   async function importHarJson(jsonText: string) {
     if (!accessToken.value || !activeWorkspaceId.value) {
       throw new Error('Sign in first to import HAR file');
     }
-    const root = parseHarExport(jsonText);
-    await saveImportedNode(root);
-    await refreshCollections();
+    const root = normalizeImportedTree(parseHarExport(jsonText));
+    await runImportWithProgress(`Importing ${root.name}`, root);
   }
 
   async function importUniversalCollection(
@@ -1134,9 +1441,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       throw new Error('Sign in first to import collections');
     }
     const { node, format } = parseUniversalCollection(rawText, fileName);
-    await saveImportedNode(node, targetParentId);
-    await refreshCollections();
-    return { name: node.name, format };
+    const normalized = normalizeImportedTree(node);
+    await runImportWithProgress(
+      `Importing ${normalized.name}`,
+      normalized,
+      targetParentId,
+    );
+    return { name: normalized.name, format };
   }
 
   return {
@@ -1162,13 +1473,21 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     loadingData,
     isBusy,
     withBusy,
+    operationProgress,
+    startOperationProgress,
+    advanceOperationProgress,
+    finishOperationProgress,
+    resetOperationProgress,
     needsPasswordSetup,
+    needsEmailVerification,
+    pendingVerificationEmail,
     initAuth,
     signIn,
     signUp,
     signInWithOtp,
     resetPasswordForEmail,
     resendVerification,
+    checkEmailVerification,
     signInWithOAuth,
     signInWithSso,
     signOut,
@@ -1181,6 +1500,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     updateProfile,
     updatePassword,
     createTeamWorkspace,
+    deleteWorkspace,
     updateWorkspaceMeta,
     inviteMember,
     updateMemberRole,

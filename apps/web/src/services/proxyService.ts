@@ -29,6 +29,28 @@ export function resolveImageProxyUrl(
   return trimmed;
 }
 
+export interface DesktopBridge {
+  isDesktop?: boolean;
+  executeRequest?: (
+    payload: ProxyExecuteRequest,
+  ) => Promise<ProxyExecuteResponse>;
+}
+
+export function isDesktopAgentAvailable(): boolean {
+  const win = window as unknown as { apiOpenDesktop?: DesktopBridge };
+  return Boolean(win.apiOpenDesktop?.executeRequest);
+}
+
+export async function executeDesktopDirectRequest(
+  payload: ProxyExecuteRequest,
+): Promise<ProxyExecuteResponse> {
+  const win = window as unknown as { apiOpenDesktop?: DesktopBridge };
+  if (!win.apiOpenDesktop?.executeRequest) {
+    throw new Error('Desktop Local Proxy is not available');
+  }
+  return win.apiOpenDesktop.executeRequest(payload);
+}
+
 export async function executeProxyRequest(
   payload: ProxyExecuteRequest,
 ): Promise<ProxyExecuteResponse> {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import {
   Collection,
   Connection,
@@ -21,7 +21,7 @@ import {
   VideoPlay,
   View,
 } from '@element-plus/icons-vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage, ElMessageBox, type ElTree } from 'element-plus';
 import type { CollectionExportFormat } from '../services/exportService';
 import { API_BASE } from '../services/httpClient';
 import {
@@ -79,6 +79,74 @@ const consoleStore = useConsoleStore();
 
 const sidebarTab = ref<'collections' | 'history'>('collections');
 const lastHistoryWsId = ref('');
+const collectionTreeRef = ref<InstanceType<typeof ElTree> | null>(null);
+const expandedTreeKeys = ref<string[]>([]);
+
+const activeTreeNodeKey = computed<string | null>(() => {
+  const reqId = store.activeTab?.savedRequestId;
+  return reqId ? `req-${reqId}` : null;
+});
+
+function findAncestorCollectionIds(
+  nodes: CollectionTreeNode[],
+  targetId: string,
+  trail: string[] = [],
+): string[] | null {
+  for (const node of nodes) {
+    if (node.id === targetId) return trail;
+    if (node.children?.length) {
+      const nextTrail =
+        node.kind === 'collection' ? [...trail, node.id] : trail;
+      const found = findAncestorCollectionIds(node.children, targetId, nextTrail);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function handleNodeExpand(data: CollectionTreeNode) {
+  if (data.kind === 'collection' && !expandedTreeKeys.value.includes(data.id)) {
+    expandedTreeKeys.value = [...expandedTreeKeys.value, data.id];
+  }
+}
+
+function handleNodeCollapse(data: CollectionTreeNode) {
+  if (data.kind === 'collection') {
+    expandedTreeKeys.value = expandedTreeKeys.value.filter((k) => k !== data.id);
+  }
+}
+
+async function syncSidebarToActiveTab() {
+  await nextTick();
+  const tree = collectionTreeRef.value as unknown as {
+    setCurrentKey?: (key?: string | number) => void;
+    store?: { nodesMap?: Record<string, { expand?: (cb?: unknown, expandParent?: boolean) => void }> };
+  } | null;
+  if (!tree) return;
+
+  const key = activeTreeNodeKey.value;
+  tree.setCurrentKey?.(key ?? undefined);
+
+  if (key) {
+    const ancestors = findAncestorCollectionIds(ws.collectionTree, key) ?? [];
+    if (ancestors.length) {
+      const merged = new Set(expandedTreeKeys.value);
+      for (const id of ancestors) {
+        merged.add(id);
+        tree.store?.nodesMap?.[id]?.expand?.(undefined, true);
+      }
+      expandedTreeKeys.value = Array.from(merged);
+    }
+  }
+}
+
+watch(
+  [activeTreeNodeKey, () => ws.collectionTree],
+  () => {
+    syncSidebarToActiveTab();
+  },
+  { immediate: true },
+);
 
 watch(sidebarTab, (tab) => {
   if (
@@ -672,16 +740,23 @@ defineExpose({
             />
             <el-tree
               v-else
+              ref="collectionTreeRef"
               :data="ws.collectionTree"
               node-key="id"
-              default-expand-all
+              highlight-current
+              :default-expanded-keys="expandedTreeKeys"
               :draggable="ws.canEdit"
               :allow-drop="allowTreeDrop"
               @node-click="handleTreeNodeClick"
               @node-drop="handleTreeDrop"
+              @node-expand="handleNodeExpand"
+              @node-collapse="handleNodeCollapse"
             >
               <template #default="{ data }">
-                <div class="tree-row">
+                <div
+                  class="tree-row"
+                  :class="{ 'is-active-node': data.id === activeTreeNodeKey }"
+                >
                   <span class="tree-label">
                     <el-icon v-if="data.kind === 'collection'">
                       <Folder />
@@ -693,7 +768,7 @@ defineExpose({
                     >
                       {{ data.request?.method }}
                     </span>
-                    <span class="tree-text">{{ data.label }}</span>
+                    <span class="tree-text" :title="data.label">{{ data.label }}</span>
                   </span>
                   <span class="tree-actions">
                     <el-button
@@ -714,7 +789,10 @@ defineExpose({
                         @click.stop
                       />
                       <template #dropdown>
-                        <el-dropdown-menu v-if="data.kind === 'collection' && data.collection">
+                        <el-dropdown-menu
+                          v-if="data.kind === 'collection' && data.collection"
+                          class="tree-node-dropdown-menu"
+                        >
                           <el-dropdown-item
                             :icon="FolderAdd"
                             @click="handleCreateSubfolder(data.collection)"
@@ -1044,8 +1122,15 @@ defineExpose({
     v-model="importTargetDialogVisible"
     title="Import Collection Destination"
     width="min(92vw, 420px)"
+    :close-on-click-modal="!importingCollection"
+    :close-on-press-escape="!importingCollection"
+    :show-close="!importingCollection"
   >
-    <el-radio-group v-model="importTargetMode" style="display: flex; flex-direction: column; gap: 10px; align-items: flex-start">
+    <el-radio-group
+      v-model="importTargetMode"
+      :disabled="importingCollection"
+      style="display: flex; flex-direction: column; gap: 10px; align-items: flex-start"
+    >
       <el-radio value="current">
         Import ke Workspace Ini ({{ ws.workspaces.find((w) => w.id === ws.activeWorkspaceId)?.name || 'Current' }})
       </el-radio>
@@ -1054,14 +1139,30 @@ defineExpose({
     <el-input
       v-if="importTargetMode === 'new'"
       v-model="importNewWorkspaceName"
+      :disabled="importingCollection"
       size="small"
       placeholder="New workspace name..."
       style="margin-top: 10px"
     />
+    <div v-if="importingCollection && ws.operationProgress.active" style="margin-top: 14px">
+      <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; color: var(--ao-text-muted)">
+        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 75%">
+          {{ ws.operationProgress.detail || ws.operationProgress.label }}
+        </span>
+        <span>{{ ws.operationProgress.percent }}% ({{ ws.operationProgress.current }}/{{ ws.operationProgress.total }})</span>
+      </div>
+      <el-progress
+        :percentage="ws.operationProgress.percent"
+        :stroke-width="10"
+        :show-text="false"
+        striped
+        striped-flow
+      />
+    </div>
     <template #footer>
-      <el-button size="small" @click="importTargetDialogVisible = false">Cancel</el-button>
+      <el-button size="small" :disabled="importingCollection" @click="importTargetDialogVisible = false">Cancel</el-button>
       <el-button size="small" type="primary" :loading="importingCollection" @click="confirmImportDestination">
-        Import
+        {{ importingCollection ? `Importing ${ws.operationProgress.percent}%` : 'Import' }}
       </el-button>
     </template>
   </el-dialog>
@@ -1174,24 +1275,55 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 4px;
   width: 100%;
-  padding-right: 6px;
+  min-width: 0;
+  padding-right: 4px;
+}
+.tree-row.is-active-node .tree-text {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+:deep(.el-tree-node__content) {
+  height: 30px;
+  border-radius: 5px;
+  margin: 1px 0;
+  transition: background-color 0.12s;
+}
+:deep(.el-tree-node.is-current > .el-tree-node__content) {
+  background-color: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
+  border-radius: 5px;
 }
 .tree-label {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
 }
+.tree-label :deep(.method-badge) {
+  flex-shrink: 0;
+  min-width: 42px;
+  text-align: center;
+}
 .tree-actions {
-  display: flex;
+  display: none;
   align-items: center;
+  flex-shrink: 0;
   gap: 2px;
+}
+:deep(.el-tree-node__content:hover) .tree-actions,
+:deep(.el-tree-node__content:focus-within) .tree-actions,
+.tree-row:hover .tree-actions {
+  display: flex;
 }
 .tree-actions :deep(.el-button + .el-button) {
   margin-left: 0;
 }
 .tree-text {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;

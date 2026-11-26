@@ -19,6 +19,7 @@ import TeamWorkspaceDialog from './components/TeamWorkspaceDialog.vue';
 import TopHeaderBar from './components/TopHeaderBar.vue';
 import VariablesDrawer from './components/VariablesDrawer.vue';
 import WorkspaceModals from './components/WorkspaceModals.vue';
+import Base64ImageDialog from './components/modals/Base64ImageDialog.vue';
 import WorkspaceOverviewPane from './components/WorkspaceOverviewPane.vue';
 import WorkspaceSidebar from './components/WorkspaceSidebar.vue';
 import DevToolboxDialog from './components/modals/DevToolboxDialog.vue';
@@ -120,6 +121,7 @@ const cookiesDialogVisible = ref(false);
 const variablesDrawerVisible = ref(false);
 const supportDialogVisible = ref(false);
 const consoleDrawerVisible = ref(false);
+const footerBase64DialogVisible = ref(false);
 const downloadAppDialogVisible = ref(false);
 const collectionSettingsVisible = ref(false);
 const collectionSettingsTarget = ref<CollectionDto | null>(null);
@@ -744,6 +746,23 @@ async function openEnvDialog(envId?: string) {
 
   <el-container v-else class="app-shell">
     <div v-if="ws.isBusy || tab?.loading" class="global-loading-bar" />
+    <div v-if="ws.operationProgress.active" class="global-progress-toast">
+      <div class="global-progress-header">
+        <span class="global-progress-title">{{ ws.operationProgress.label }}</span>
+        <span class="global-progress-pct">{{ ws.operationProgress.percent }}%</span>
+      </div>
+      <el-progress
+        :percentage="ws.operationProgress.percent"
+        :stroke-width="8"
+        :show-text="false"
+        striped
+        striped-flow
+      />
+      <div class="global-progress-detail">
+        <span>{{ ws.operationProgress.detail }}</span>
+        <span>{{ ws.operationProgress.current }}/{{ ws.operationProgress.total }}</span>
+      </div>
+    </div>
     <div
       class="shell-content"
       :class="{ 'navbar-bottom': settings.navbarPosition === 'bottom' }"
@@ -802,12 +821,11 @@ async function openEnvDialog(envId?: string) {
 
         <el-main v-if="tab" class="workspace">
           <RealtimePanel
-            v-if="clientProtocol === 'ws' || clientProtocol === 'sse'"
-            :key="`${store.activeTabId}-${clientProtocol}`"
-            :protocol="clientProtocol"
+            v-show="clientProtocol === 'ws' || clientProtocol === 'sse'"
+            :protocol="clientProtocol === 'sse' ? 'sse' : 'ws'"
           />
 
-          <div v-else class="workspace-http-wrap">
+          <div v-show="clientProtocol === 'http'" class="workspace-http-wrap">
             <div class="workspace-tab-header">
               <button
                 type="button"
@@ -1080,6 +1098,7 @@ async function openEnvDialog(envId?: string) {
 
     <StatusFooter
       @open-cookies="cookiesDialogVisible = true"
+      @open-base64="footerBase64DialogVisible = true"
       @toggle-console="consoleDrawerVisible = !consoleDrawerVisible"
       @open-support="supportDialogVisible = true"
       @open-shortcuts="shortcutsDialogVisible = true"
@@ -1158,5 +1177,55 @@ async function openEnvDialog(envId?: string) {
     <WebhookBinDialog v-model:visible="webhookBinVisible" />
     <TrashDialog v-model:visible="trashVisible" />
     <PluginMarketplaceDialog v-model:visible="marketplaceVisible" />
+    <Base64ImageDialog v-model:visible="footerBase64DialogVisible" />
   </el-container>
 </template>
+
+<style scoped>
+.global-progress-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 36px;
+  z-index: 3000;
+  width: min(320px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--ao-surface);
+  border: 1px solid var(--ao-border);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.global-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ao-text);
+}
+.global-progress-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.global-progress-pct {
+  color: var(--el-color-primary);
+  font-variant-numeric: tabular-nums;
+}
+.global-progress-detail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ao-text-muted);
+}
+.global-progress-detail span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

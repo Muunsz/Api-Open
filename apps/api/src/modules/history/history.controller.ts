@@ -27,7 +27,7 @@ export class HistoryController {
     return this.historyService.list(
       workspaceId,
       user.id,
-      limit ? Number(limit) : 100,
+      limit ? Number(limit) : 35,
     );
   }
 

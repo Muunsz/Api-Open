@@ -114,7 +114,9 @@ async function callExternalAi(prompt: string, cfg: AiConfig): Promise<string | n
     }
 
     if (cfg.provider === 'ollama') {
-      const base = (cfg.ollamaUrl?.trim() || 'http://localhost:11434').replace(/\/$/, '');
+      const rawBase = cfg.ollamaUrl?.trim();
+      if (!rawBase) return null;
+      const base = rawBase.replace(/\/$/, '');
       const res = await fetch(`${base}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

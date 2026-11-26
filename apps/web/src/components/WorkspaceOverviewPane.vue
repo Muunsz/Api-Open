@@ -10,6 +10,7 @@ import {
   UserFilled,
   View,
 } from '@element-plus/icons-vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { useConsoleStore } from '../stores/console';
 import { useTabsStore } from '../stores/tabs';
 import {
@@ -116,6 +117,30 @@ watch(
   },
   { immediate: true },
 );
+
+async function handleDeleteActiveWorkspace() {
+  const current = activeWorkspace.value;
+  if (!current) return;
+  try {
+    await ElMessageBox.confirm(
+      `Delete workspace "${current.name}" and all its collections, environments, and history?`,
+      'Delete Workspace',
+      {
+        type: 'warning',
+        confirmButtonText: 'Delete',
+        cancelButtonText: 'Cancel',
+      },
+    );
+    await ws.deleteWorkspace(current.id);
+    ElMessage.success(`Workspace "${current.name}" deleted`);
+  } catch (err) {
+    if (err !== 'cancel' && err !== 'close') {
+      ElMessage.error(
+        err instanceof Error ? err.message : 'Failed to delete workspace',
+      );
+    }
+  }
+}
 </script>
 
 <template>
@@ -154,6 +179,15 @@ watch(
           <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
             <el-button size="small" :icon="Download" @click="emit('export-all')">
               Export Collections
+            </el-button>
+            <el-button
+              v-if="ws.isAuthenticated && ws.currentUserRole === 'OWNER' && activeWorkspace"
+              size="small"
+              type="danger"
+              plain
+              @click="handleDeleteActiveWorkspace"
+            >
+              Delete Workspace
             </el-button>
             <el-button
               size="small"

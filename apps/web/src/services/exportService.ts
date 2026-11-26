@@ -112,6 +112,96 @@ export function downloadWindowsLauncherScript(appUrl = window.location.origin) {
   downloadBlobFile(script, 'Api-Open-Windows.bat', 'application/bat');
 }
 
+export function downloadMacLauncherScript(appUrl = window.location.origin) {
+  const script = [
+    '#!/bin/bash',
+    `APP_URL="${appUrl}"`,
+    'if [ -d "/Applications/Google Chrome.app" ]; then',
+    '  open -na "Google Chrome" --args --app="$APP_URL"',
+    'elif [ -d "/Applications/Microsoft Edge.app" ]; then',
+    '  open -na "Microsoft Edge" --args --app="$APP_URL"',
+    'elif [ -d "/Applications/Brave Browser.app" ]; then',
+    '  open -na "Brave Browser" --args --app="$APP_URL"',
+    'else',
+    '  open "$APP_URL"',
+    'fi',
+  ].join('\n');
+  downloadBlobFile(script, 'Api-Open-macOS.command', 'text/plain');
+}
+
+export function downloadLinuxLauncherScript(appUrl = window.location.origin) {
+  const script = [
+    '#!/usr/bin/env bash',
+    `APP_URL="${appUrl}"`,
+    'for browser in google-chrome chromium chromium-browser microsoft-edge brave-browser; do',
+    '  if command -v "$browser" >/dev/null 2>&1; then',
+    '    nohup "$browser" --app="$APP_URL" >/dev/null 2>&1 &',
+    '    exit 0',
+    '  fi',
+    'done',
+    'xdg-open "$APP_URL" >/dev/null 2>&1 &',
+  ].join('\n');
+  downloadBlobFile(script, 'Api-Open-Linux.sh', 'text/x-shellscript');
+}
+
+export function downloadDesktopEditionScript(
+  edition: 'electron' | 'csharp' | 'cpp' | 'java',
+  os: 'win' | 'mac' | 'linux',
+  appUrl = window.location.origin,
+) {
+  const repoUrl = 'https://github.com/Muunsz/Api-Open.git';
+  if (os === 'win') {
+    const runCmd =
+      edition === 'electron'
+        ? 'npm install && npm run start --workspace=@api-open/desktop'
+        : edition === 'csharp'
+          ? 'cd apps\\desktop-csharp && dotnet run'
+          : edition === 'cpp'
+            ? 'cd apps\\desktop-cpp && cmake -B build -A x64 && cmake --build build --config Release && .\\build\\Release\\ApiOpenDesktop.exe'
+            : 'cd apps\\desktop-java && mvn javafx:run';
+
+    const script = [
+      '@echo off',
+      `set "API_OPEN_URL=${appUrl}"`,
+      'if not exist "Api-Open" (',
+      `  git clone ${repoUrl} Api-Open`,
+      ')',
+      'cd Api-Open',
+      runCmd,
+      'pause',
+    ].join('\r\n');
+    downloadBlobFile(
+      script,
+      `Api-Open-${edition}-Windows.bat`,
+      'application/bat',
+    );
+    return;
+  }
+
+  const runCmd =
+    edition === 'electron'
+      ? 'npm install && npm run start --workspace=@api-open/desktop'
+      : 'cd apps/desktop-java && mvn javafx:run';
+
+  const script = [
+    '#!/usr/bin/env bash',
+    `export API_OPEN_URL="${appUrl}"`,
+    'if [ ! -d "Api-Open" ]; then',
+    `  git clone "${repoUrl}" Api-Open`,
+    'fi',
+    'cd Api-Open || exit 1',
+    runCmd,
+  ].join('\n');
+
+  const ext = os === 'mac' ? 'command' : 'sh';
+  const label = os === 'mac' ? 'macOS' : 'Linux';
+  downloadBlobFile(
+    script,
+    `Api-Open-${edition}-${label}.${ext}`,
+    os === 'mac' ? 'text/plain' : 'text/x-shellscript',
+  );
+}
+
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

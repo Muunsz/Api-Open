@@ -141,6 +141,14 @@ export class WorkspaceController {
     );
   }
 
+  @Delete(':workspaceId')
+  deleteWorkspace(
+    @Param('workspaceId') workspaceId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.workspaceService.deleteWorkspace(workspaceId, user.id);
+  }
+
   @Delete(':workspaceId/members/:memberId')
   removeMember(
     @Param('workspaceId') workspaceId: string,

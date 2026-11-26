@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
+import { AuthModule } from './modules/auth/auth.module';
 import { CollectionModule } from './modules/collection/collection.module';
 import { EnvironmentModule } from './modules/environment/environment.module';
 import { HistoryModule } from './modules/history/history.module';
@@ -17,6 +18,7 @@ import { PrismaModule } from './prisma/prisma.module';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     MailModule,
+    AuthModule,
     WorkspaceModule,
     CollectionModule,
     RequestModule,

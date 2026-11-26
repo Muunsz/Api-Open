@@ -98,8 +98,36 @@ export function parseOpenApiSpec(specText: string): ImportedCollectionNode {
     baseUrl = `https://${doc.host}${doc.basePath ?? ''}`.replace(/\/$/, '');
   }
 
-  const tagMap = new Map<string, Array<Omit<ApiRequestDto, 'id' | 'collectionId'>>>();
+  const rootFolders: ImportedCollectionNode[] = [];
   const rootRequests: Array<Omit<ApiRequestDto, 'id' | 'collectionId'>> = [];
+
+  const insertIntoTagPath = (
+    rawTag: string,
+    reqItem: Omit<ApiRequestDto, 'id' | 'collectionId'>,
+  ) => {
+    const segments = rawTag
+      .split('/')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!segments.length) {
+      rootRequests.push(reqItem);
+      return;
+    }
+    let currentList = rootFolders;
+    let targetFolder: ImportedCollectionNode | null = null;
+    for (const seg of segments) {
+      let existing = currentList.find((f) => f.name === seg);
+      if (!existing) {
+        existing = { name: seg, folders: [], requests: [] };
+        currentList.push(existing);
+      }
+      targetFolder = existing;
+      currentList = existing.folders;
+    }
+    if (targetFolder) {
+      targetFolder.requests.push(reqItem);
+    }
+  };
 
   for (const [pathKey, methodsObj] of Object.entries(doc.paths)) {
     for (const [rawMethod, op] of Object.entries(methodsObj)) {
@@ -139,25 +167,16 @@ export function parseOpenApiSpec(specText: string): ImportedCollectionNode {
 
       const tag = op.tags?.[0];
       if (tag) {
-        if (!tagMap.has(tag)) tagMap.set(tag, []);
-        tagMap.get(tag)!.push(reqItem);
+        insertIntoTagPath(tag, reqItem);
       } else {
         rootRequests.push(reqItem);
       }
     }
   }
 
-  const folders: ImportedCollectionNode[] = Array.from(tagMap.entries()).map(
-    ([name, requests]) => ({
-      name,
-      folders: [],
-      requests,
-    }),
-  );
-
   return {
     name: doc.info?.title || 'OpenAPI Collection',
-    folders,
+    folders: rootFolders,
     requests: rootRequests,
   };
 }
@@ -171,7 +190,8 @@ function collectRequestsWithTag(
     if (child.kind === 'request' && child.request) {
       out.push({ req: child.request, tag: tag || node.label });
     } else if (child.kind === 'collection') {
-      out.push(...collectRequestsWithTag(child, child.label));
+      const nextTag = tag ? `${tag}/${child.label}` : child.label;
+      out.push(...collectRequestsWithTag(child, nextTag));
     }
   }
   return out;

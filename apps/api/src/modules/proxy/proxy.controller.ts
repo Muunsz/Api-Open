@@ -6,6 +6,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Req,
   Res,
 } from '@nestjs/common';
@@ -19,6 +20,15 @@ import { ProxyService } from './proxy.service';
 @Controller('proxy')
 export class ProxyController {
   constructor(private readonly proxyService: ProxyService) {}
+
+  @Get('image')
+  async proxyImage(@Query('url') url: string, @Res() res: Response) {
+    const { buffer, contentType } = await this.proxyService.fetchImage(url);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    return res.send(buffer);
+  }
 
   @Post('execute')
   execute(@Body() body: ProxyExecuteRequest): Promise<ProxyExecuteResponse> {

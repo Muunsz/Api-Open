@@ -861,8 +861,12 @@ const responseSectionClasses = computed(() => [
 }
 .response-meta {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
+}
+.response-meta :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 .body-controls {
   display: flex;
