@@ -4,8 +4,11 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import type { createRemoteJWKSet } from 'jose';
 import { PrismaService } from '../../prisma/prisma.service';
+
+const loadJose = () =>
+  Function('return import("jose")')() as Promise<typeof import('jose')>;
 
 export interface AuthUser {
   id: string;
@@ -19,7 +22,7 @@ export class SupabaseAuthGuard implements CanActivate {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  private getJwks() {
+  private async getJwks() {
     if (!this.jwks) {
       const jwksUrl =
         process.env.SUPABASE_JWKS_URL ||
@@ -29,6 +32,7 @@ export class SupabaseAuthGuard implements CanActivate {
       if (!jwksUrl) {
         throw new UnauthorizedException('SUPABASE_JWKS_URL is not configured');
       }
+      const { createRemoteJWKSet } = await loadJose();
       this.jwks = createRemoteJWKSet(new URL(jwksUrl));
     }
     return this.jwks;
@@ -49,7 +53,8 @@ export class SupabaseAuthGuard implements CanActivate {
 
     let payload: Record<string, unknown>;
     try {
-      const verified = await jwtVerify(token, this.getJwks());
+      const { jwtVerify } = await loadJose();
+      const verified = await jwtVerify(token, await this.getJwks());
       payload = verified.payload as Record<string, unknown>;
     } catch {
       throw new UnauthorizedException('Invalid or expired Supabase token');

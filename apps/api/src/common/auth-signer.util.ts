@@ -1,6 +1,8 @@
 import * as crypto from 'node:crypto';
 import type { AuthConfig } from '@api-open/shared';
-import { SignJWT } from 'jose';
+
+const loadJose = () =>
+  Function('return import("jose")')() as Promise<typeof import('jose')>;
 
 function sha256Hex(data: string | Buffer): string {
   return crypto.createHash('sha256').update(data).digest('hex');
@@ -17,6 +19,7 @@ export async function buildJwtHeader(
   if (auth.payload?.trim()) {
     parsedPayload = JSON.parse(auth.payload) as Record<string, unknown>;
   }
+  const { SignJWT } = await loadJose();
   const secretKey = new TextEncoder().encode(auth.secret);
   const jwt = await new SignJWT(parsedPayload)
     .setProtectedHeader({ alg: auth.algorithm || 'HS256', typ: 'JWT' })
