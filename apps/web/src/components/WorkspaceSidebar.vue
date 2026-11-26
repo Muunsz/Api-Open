@@ -139,51 +139,71 @@ async function handlePostmanFileSelected(e: Event) {
   }
 }
 
+const importTargetDialogVisible = ref(false);
+const importTargetMode = ref<'current' | 'new'>('current');
+const importNewWorkspaceName = ref('');
+const importingCollection = ref(false);
+let pendingImportAction: (() => Promise<void>) | null = null;
+
+function openImportDestinationDialog(defaultWsName: string, action: () => Promise<void>) {
+  importTargetMode.value = 'current';
+  importNewWorkspaceName.value = defaultWsName.replace(/\.[^.]+$/, '') || 'Imported Workspace';
+  pendingImportAction = action;
+  importTargetDialogVisible.value = true;
+}
+
+async function confirmImportDestination() {
+  if (!pendingImportAction) return;
+  importingCollection.value = true;
+  try {
+    if (importTargetMode.value === 'new') {
+      const wsName = importNewWorkspaceName.value.trim() || 'Imported Workspace';
+      await ws.createTeamWorkspace(wsName);
+    }
+    await pendingImportAction();
+    importTargetDialogVisible.value = false;
+    pendingImportAction = null;
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : 'Import failed');
+  } finally {
+    importingCollection.value = false;
+  }
+}
+
 async function handleOpenApiFileSelected(e: Event) {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
-  try {
-    const text = await file.text();
+  const text = await file.text();
+  input.value = '';
+  openImportDestinationDialog(file.name, async () => {
     await ws.importOpenApiJson(text);
     ElMessage.success('OpenAPI spec imported');
-  } catch (err) {
-    ElMessage.error(
-      err instanceof Error ? err.message : 'OpenAPI import failed',
-    );
-  } finally {
-    input.value = '';
-  }
+  });
 }
 
 async function handleInsomniaFileSelected(e: Event) {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
-  try {
-    const text = await file.text();
+  const text = await file.text();
+  input.value = '';
+  openImportDestinationDialog(file.name, async () => {
     await ws.importInsomniaJson(text);
     ElMessage.success('Insomnia collection imported');
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : 'Insomnia import failed');
-  } finally {
-    input.value = '';
-  }
+  });
 }
 
 async function handleHarFileSelected(e: Event) {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
-  try {
-    const text = await file.text();
+  const text = await file.text();
+  input.value = '';
+  openImportDestinationDialog(file.name, async () => {
     await ws.importHarJson(text);
     ElMessage.success('HAR file imported');
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : 'HAR import failed');
-  } finally {
-    input.value = '';
-  }
+  });
 }
 
 function triggerUniversalImport(parentId?: string) {
@@ -195,20 +215,15 @@ async function handleUniversalFileSelected(e: Event) {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
-  try {
-    const text = await file.text();
-    const res = await ws.importUniversalCollection(
-      text,
-      file.name,
-      universalImportTargetParentId.value,
-    );
+  const text = await file.text();
+  const fileName = file.name;
+  const targetParent = universalImportTargetParentId.value;
+  universalImportTargetParentId.value = undefined;
+  input.value = '';
+  openImportDestinationDialog(fileName, async () => {
+    const res = await ws.importUniversalCollection(text, fileName, targetParent);
     ElMessage.success(`Imported "${res.name}" (${res.format})`);
-  } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : 'Import failed');
-  } finally {
-    universalImportTargetParentId.value = undefined;
-    input.value = '';
-  }
+  });
 }
 
 async function copyMockUrl(col: CollectionDto) {
@@ -255,6 +270,9 @@ function allowTreeDrop(
   type: 'prev' | 'next' | 'inner',
 ) {
   if (type === 'inner' && dropNode.data.kind !== 'collection') return false;
+  if (draggingNode.data.kind === 'collection' && dropNode.data.kind === 'request') {
+    return false;
+  }
   if (draggingNode.data.kind === 'request' && dropNode.data.kind === 'collection' && type !== 'inner') {
     return false;
   }
@@ -274,13 +292,19 @@ async function handleTreeDrop(
         ? drop.collection.id
         : drop.request?.collectionId;
     if (!targetColId) return;
-    await ws.moveOrReorderRequest(drag.request.id, targetColId, 0);
+    const dropOrder = drop.request?.order ?? 0;
+    const nextOrder =
+      dropType === 'inner' ? 0 : dropType === 'before' ? Math.max(0, dropOrder - 1) : dropOrder + 1;
+    await ws.moveOrReorderRequest(drag.request.id, targetColId, nextOrder);
   } else if (drag.kind === 'collection' && drag.collection) {
     const nextParentId =
       dropType === 'inner' && drop.collection
         ? drop.collection.id
         : (drop.collection?.parentId ?? null);
-    await ws.moveOrReorderCollection(drag.collection.id, nextParentId, 0);
+    const dropOrder = drop.collection?.order ?? 0;
+    const nextOrder =
+      dropType === 'inner' ? 0 : dropType === 'before' ? Math.max(0, dropOrder - 1) : dropOrder + 1;
+    await ws.moveOrReorderCollection(drag.collection.id, nextParentId, nextOrder);
   }
 }
 
@@ -1015,6 +1039,32 @@ defineExpose({
       </el-tab-pane>
     </el-tabs>
   </el-aside>
+
+  <el-dialog
+    v-model="importTargetDialogVisible"
+    title="Import Collection Destination"
+    width="min(92vw, 420px)"
+  >
+    <el-radio-group v-model="importTargetMode" style="display: flex; flex-direction: column; gap: 10px; align-items: flex-start">
+      <el-radio value="current">
+        Import ke Workspace Ini ({{ ws.workspaces.find((w) => w.id === ws.activeWorkspaceId)?.name || 'Current' }})
+      </el-radio>
+      <el-radio value="new">Buat Workspace Baru &amp; Import</el-radio>
+    </el-radio-group>
+    <el-input
+      v-if="importTargetMode === 'new'"
+      v-model="importNewWorkspaceName"
+      size="small"
+      placeholder="New workspace name..."
+      style="margin-top: 10px"
+    />
+    <template #footer>
+      <el-button size="small" @click="importTargetDialogVisible = false">Cancel</el-button>
+      <el-button size="small" type="primary" :loading="importingCollection" @click="confirmImportDestination">
+        Import
+      </el-button>
+    </template>
+  </el-dialog>
 
   <div
     v-show="!settings.sidebarHidden"

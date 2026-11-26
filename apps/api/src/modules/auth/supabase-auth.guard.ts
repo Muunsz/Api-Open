@@ -202,7 +202,7 @@ export class SupabaseAuthGuard implements CanActivate {
             role: 'OWNER',
             workspace: {
               create: {
-                name: 'Personal Workspace',
+                name: `${name || email.split('@')[0]}'s Workspace`,
                 type: 'PERSONAL',
               },
             },
