@@ -51,13 +51,69 @@ export class SupabaseAuthGuard implements CanActivate {
       throw new UnauthorizedException('Empty authorization token');
     }
 
-    let payload: Record<string, unknown>;
+    let payload: Record<string, unknown> | null = null;
+    let verifyErrMessage = '';
     try {
       const { jwtVerify } = await loadJose();
       const verified = await jwtVerify(token, await this.getJwks());
       payload = verified.payload as Record<string, unknown>;
-    } catch {
-      throw new UnauthorizedException('Invalid or expired Supabase token');
+    } catch (err) {
+      verifyErrMessage = err instanceof Error ? err.message : String(err);
+    }
+
+    if (!payload && process.env.SUPABASE_JWT_SECRET) {
+      try {
+        const { jwtVerify } = await loadJose();
+        const secret = new TextEncoder().encode(process.env.SUPABASE_JWT_SECRET);
+        const verified = await jwtVerify(token, secret);
+        payload = verified.payload as Record<string, unknown>;
+      } catch (err) {
+        verifyErrMessage = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    if (!payload) {
+      const supabaseUrl =
+        process.env.SUPABASE_URL?.replace(/\/$/, '') ||
+        (process.env.SUPABASE_JWKS_URL
+          ? new URL(process.env.SUPABASE_JWKS_URL).origin
+          : '');
+      if (supabaseUrl) {
+        try {
+          const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              ...(process.env.SUPABASE_ANON_KEY
+                ? { apikey: process.env.SUPABASE_ANON_KEY }
+                : {}),
+            },
+          });
+          if (userRes.ok) {
+            const u = (await userRes.json()) as {
+              id?: string;
+              email?: string;
+              user_metadata?: Record<string, unknown>;
+            };
+            if (u.id && u.email) {
+              payload = {
+                sub: u.id,
+                email: u.email,
+                user_metadata: u.user_metadata ?? {},
+              };
+            }
+          }
+        } catch {
+          // ignore fallback error
+        }
+      }
+    }
+
+    if (!payload) {
+      throw new UnauthorizedException(
+        verifyErrMessage
+          ? `Invalid or expired Supabase token (${verifyErrMessage})`
+          : 'Invalid or expired Supabase token',
+      );
     }
 
     const userId = typeof payload.sub === 'string' ? payload.sub : '';
