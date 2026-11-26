@@ -791,12 +791,21 @@ function formatBytes(bytes: number): string {
 <style scoped>
 .response-section {
   background: var(--ao-surface);
-  padding: 12px 14px;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  min-width: 220px;
-  min-height: 160px;
+  min-width: 240px;
+  min-height: 220px;
+}
+.response-section :deep(.el-tabs__header) {
+  margin: 0 0 6px;
+}
+.response-section :deep(.el-tabs__item) {
+  height: 30px;
+  line-height: 30px;
+  padding: 0 10px;
+  font-size: 12.5px;
 }
 .response-section > :deep(.el-tabs) {
   display: flex;
@@ -845,18 +854,18 @@ function formatBytes(bytes: number): string {
 .body-controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .response-pre {
   background: var(--ao-code-bg);
   border: 1px solid var(--ao-border);
   color: var(--ao-text);
   border-radius: 6px;
-  padding: 12px;
+  padding: 10px 12px;
   flex: 1;
-  min-height: 0;
+  min-height: 120px;
   font-family: Consolas, Monaco, 'Courier New', monospace;
   font-size: 12.5px;
   overflow: auto;
