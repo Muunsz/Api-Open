@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "cd ../.. && npm install --no-audit --no-fund --loglevel=error",
-  "buildCommand": "cd ../.. && npm run build --workspace=@api-open/shared && npx prisma generate --schema=apps/api/prisma/schema.prisma && npm run build --workspace=@api-open/api",
+  "installCommand": "unset npm_config_cache_dir && cd ../.. && npm install --no-audit --no-fund --loglevel=error",
+  "buildCommand": "unset npm_config_cache_dir && cd ../.. && npm run build --workspace=@api-open/shared --loglevel=error && npx prisma generate --schema=apps/api/prisma/schema.prisma && npm run build --workspace=@api-open/api --loglevel=error",
   "rewrites": [
     {
       "source": "/(.*)",
