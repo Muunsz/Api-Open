@@ -245,6 +245,28 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return roots;
   });
 
+  function clearSessionState() {
+    user.value = null;
+    accessToken.value = null;
+    profile.value = null;
+    workspaces.value = [];
+    activeWorkspaceId.value = '';
+    collections.value = [];
+    members.value = [];
+    monitors.value = [];
+    onlinePeers.value = [];
+    loadedMembersWsId.value = '';
+    loadedMonitorsWsId.value = '';
+    needsPasswordSetup.value = false;
+    environments.value = loadLocalEnvironments();
+    if (
+      activeEnvId.value &&
+      !environments.value.some((e) => e.id === activeEnvId.value)
+    ) {
+      activeEnvId.value = '';
+    }
+  }
+
   async function initAuth() {
     if (!supabase) return;
     const { data } = await supabase.auth.getSession();
@@ -268,29 +290,20 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       if (accessToken.value) {
         await loadWorkspaces();
       } else {
-        profile.value = null;
-        workspaces.value = [];
-        activeWorkspaceId.value = '';
-        collections.value = [];
-        members.value = [];
-        monitors.value = [];
-        loadedMembersWsId.value = '';
-        loadedMonitorsWsId.value = '';
-        environments.value = loadLocalEnvironments();
-        if (
-          activeEnvId.value &&
-          !environments.value.some((e) => e.id === activeEnvId.value)
-        ) {
-          activeEnvId.value = '';
-        }
+        clearSessionState();
       }
     });
   }
 
   async function signIn(email: string, password: string) {
     if (!supabase) throw new Error('Supabase is not configured');
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    if (data.session) {
+      user.value = data.session.user;
+      accessToken.value = data.session.access_token;
+      await loadWorkspaces();
+    }
   }
 
   async function signUp(email: string, password: string) {
@@ -391,8 +404,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function signOut() {
+    clearSessionState();
     if (!supabase) return;
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // local session already cleared
+    }
   }
 
   let inFlightWorkspaces: Promise<void> | null = null;
