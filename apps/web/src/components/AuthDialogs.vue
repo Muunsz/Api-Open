@@ -99,6 +99,7 @@ async function handleResendVerification() {
   }
 }
 
+const ssoExpanded = ref(false);
 const ssoDomain = ref('');
 async function handleSsoLogin() {
   if (!ssoDomain.value.trim()) {
@@ -150,8 +151,9 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
   <!-- Auth Dialog -->
   <el-dialog
     :model-value="authVisible"
-    width="min(92vw, 400px)"
+    width="min(92vw, 430px)"
     align-center
+    class="auth-modal-dialog"
     @update:model-value="emit('update:authVisible', $event)"
   >
     <template #header>
@@ -165,32 +167,80 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
           alt="Api-Open"
           class="auth-logo-wordmark"
         />
-        <el-text size="small" type="info">
+        <span class="auth-subtitle">
           Sign in to sync workspaces, collections &amp; environments
-        </el-text>
+        </span>
       </div>
     </template>
-    <el-tabs v-model="authMode" stretch>
-      <el-tab-pane label="Sign In" name="login" />
-      <el-tab-pane label="Register" name="register" />
-      <el-tab-pane label="Email Link" name="magic" />
-    </el-tabs>
-    <el-form label-position="top" @submit.prevent="handleAuthSubmit">
-      <el-form-item label="Email">
+
+    <div class="auth-mode-pills">
+      <button
+        type="button"
+        class="auth-mode-pill"
+        :class="{ active: authMode === 'login' }"
+        @click="authMode = 'login'"
+      >
+        Sign In
+      </button>
+      <button
+        type="button"
+        class="auth-mode-pill"
+        :class="{ active: authMode === 'register' }"
+        @click="authMode = 'register'"
+      >
+        Register
+      </button>
+      <button
+        type="button"
+        class="auth-mode-pill"
+        :class="{ active: authMode === 'magic' }"
+        @click="authMode = 'magic'"
+      >
+        Email Link
+      </button>
+    </div>
+
+    <el-form label-position="top" class="auth-form" @submit.prevent="handleAuthSubmit">
+      <el-form-item label="Email Address">
         <el-input
           v-model="authEmail"
+          size="large"
           type="email"
           placeholder="you@example.com"
         />
       </el-form-item>
-      <el-form-item v-if="authMode !== 'magic'" label="Password">
-        <el-input v-model="authPassword" type="password" show-password />
+
+      <el-form-item v-if="authMode !== 'magic'">
+        <template #label>
+          <div class="auth-pw-label-row">
+            <span>Password</span>
+            <el-button
+              v-if="authMode === 'login'"
+              link
+              type="primary"
+              size="small"
+              :disabled="authSubmitting"
+              @click="handleResetPasswordEmail"
+            >
+              Forgot / Set Password?
+            </el-button>
+          </div>
+        </template>
+        <el-input
+          v-model="authPassword"
+          size="large"
+          type="password"
+          placeholder="Enter your password"
+          show-password
+        />
       </el-form-item>
+
       <el-button
         type="primary"
+        size="large"
         native-type="submit"
         :loading="authSubmitting"
-        style="width: 100%"
+        class="auth-submit-btn"
       >
         {{
           authMode === 'login'
@@ -200,21 +250,9 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
               : 'Send Email Verification Link'
         }}
       </el-button>
-      <div
-        style="display: flex; justify-content: space-between; margin-top: 8px"
-      >
+
+      <div v-if="authMode === 'register'" style="margin-top: 8px; text-align: center">
         <el-button
-          v-if="authMode === 'login'"
-          link
-          type="primary"
-          size="small"
-          :disabled="authSubmitting"
-          @click="handleResetPasswordEmail"
-        >
-          Forgot / Set Password via Email?
-        </el-button>
-        <el-button
-          v-if="authMode === 'register'"
           link
           type="primary"
           size="small"
@@ -226,19 +264,46 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
       </div>
     </el-form>
 
-    <el-divider>or continue with</el-divider>
+    <el-divider class="auth-divider">or continue with</el-divider>
+
     <div class="oauth-buttons">
-      <el-button @click="handleOAuthLogin('google')">Google</el-button>
-      <el-button @click="handleOAuthLogin('github')">GitHub</el-button>
-      <el-button @click="handleOAuthLogin('discord')">Discord</el-button>
+      <el-button class="oauth-btn" @click="handleOAuthLogin('google')">
+        <svg viewBox="0 0 24 24" width="16" height="16" style="margin-right: 6px">
+          <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.2-1.5 3.6-5.5 3.6-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 3.1 14.6 2.2 12 2.2 6.6 2.2 2.2 6.6 2.2 12s4.4 9.8 9.8 9.8c5.7 0 9.4-4 9.4-9.6 0-.6-.1-1.1-.2-1.6H12z" />
+        </svg>
+        Google
+      </el-button>
+      <el-button class="oauth-btn" @click="handleOAuthLogin('github')">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="margin-right: 6px">
+          <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z" />
+        </svg>
+        GitHub
+      </el-button>
+      <el-button class="oauth-btn" @click="handleOAuthLogin('discord')">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="#5865F2" style="margin-right: 6px">
+          <path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.7 1.4a18.2 18.2 0 0 0-5.4 0L8.6 3a19.8 19.8 0 0 0-4.9 1.4C.6 9-.2 13.5.2 18a20 20 0 0 0 6 3l1.3-2.1c-.7-.3-1.4-.6-2-1 .2-.1.3-.3.5-.4a14.2 14.2 0 0 0 12 0l.5.4c-.6.4-1.3.7-2 1L17.8 21a20 20 0 0 0 6-3c.5-5.2-.8-9.7-3.5-13.6zM8.5 15.3c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4c1.2 0 2.2 1.1 2.1 2.4 0 1.3-.9 2.4-2.1 2.4zm7 0c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4c1.2 0 2.2 1.1 2.1 2.4 0 1.3-.9 2.4-2.1 2.4z" />
+        </svg>
+        Discord
+      </el-button>
     </div>
-    <div style="display: flex; gap: 6px; margin-top: 10px">
-      <el-input
-        v-model="ssoDomain"
-        size="small"
-        placeholder="Enterprise SSO domain (SAML/OIDC, e.g. acme.com)"
-      />
-      <el-button size="small" @click="handleSsoLogin">SSO</el-button>
+
+    <div class="sso-section">
+      <button
+        type="button"
+        class="sso-toggle-btn"
+        @click="ssoExpanded = !ssoExpanded"
+      >
+        {{ ssoExpanded ? 'Hide Enterprise SSO' : 'Sign in with Enterprise SSO (SAML / OIDC)' }}
+      </button>
+      <div v-if="ssoExpanded" class="sso-input-row">
+        <el-input
+          v-model="ssoDomain"
+          size="default"
+          placeholder="Company domain (e.g. acme.com)"
+          @keyup.enter="handleSsoLogin"
+        />
+        <el-button type="primary" plain @click="handleSsoLogin">Continue</el-button>
+      </div>
     </div>
   </el-dialog>
 
@@ -285,13 +350,68 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 6px;
-  padding-top: 4px;
+  gap: 8px;
+  padding-top: 6px;
 }
 .auth-logo-wordmark {
   height: 44px;
   width: auto;
   object-fit: contain;
+}
+.auth-subtitle {
+  font-size: 12.5px;
+  color: var(--ao-text-muted);
+}
+.auth-mode-pills {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--ao-surface-2);
+  border: 1px solid var(--ao-border);
+  margin-bottom: 16px;
+}
+.auth-mode-pill {
+  border: none;
+  background: transparent;
+  color: var(--ao-text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.auth-mode-pill:hover {
+  color: var(--ao-text);
+}
+.auth-mode-pill.active {
+  background: var(--ao-surface);
+  color: var(--el-color-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+.auth-form :deep(.el-form-item__label) {
+  width: 100%;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding-bottom: 4px;
+}
+.auth-pw-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.auth-submit-btn {
+  width: 100%;
+  margin-top: 4px;
+  font-weight: 600;
+  border-radius: 8px;
+}
+.auth-divider {
+  margin: 18px 0 14px;
+  font-size: 12px;
 }
 .oauth-buttons {
   display: grid;
@@ -300,5 +420,31 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
 }
 .oauth-buttons :deep(.el-button + .el-button) {
   margin-left: 0;
+}
+.oauth-btn {
+  height: 38px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+.sso-section {
+  margin-top: 14px;
+  text-align: center;
+}
+.sso-toggle-btn {
+  border: none;
+  background: transparent;
+  color: var(--ao-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.sso-toggle-btn:hover {
+  color: var(--el-color-primary);
+  text-decoration: underline;
+}
+.sso-input-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
 }
 </style>
