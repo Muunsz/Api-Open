@@ -3,10 +3,16 @@
   "framework": null,
   "outputDirectory": "dist",
   "functions": {
-    "api/[...all].js": {
+    "api/index.js": {
       "includeFiles": "dist/**"
     }
   },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/index"
+    }
+  ],
   "installCommand": "unset npm_config_cache_dir NPM_CONFIG_CACHE_DIR && cd ../.. && npm install --no-audit --no-fund --loglevel=error",
   "buildCommand": "unset npm_config_cache_dir NPM_CONFIG_CACHE_DIR && cd ../.. && npm run vercel:api --loglevel=error"
 }
