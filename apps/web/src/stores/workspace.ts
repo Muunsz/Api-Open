@@ -1051,12 +1051,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       node.name,
       parentId,
     );
-    await Promise.all([
-      ...node.requests.map((req) =>
-        workspaceApi.createRequest(accessToken.value!, createdCol.id, req),
-      ),
-      ...node.folders.map((sub) => saveImportedNode(sub, createdCol.id)),
-    ]);
+    for (const req of node.requests) {
+      await workspaceApi.createRequest(accessToken.value, createdCol.id, req);
+    }
+    for (const sub of node.folders) {
+      await saveImportedNode(sub, createdCol.id);
+    }
   }
 
   async function importPostmanJson(jsonText: string) {
