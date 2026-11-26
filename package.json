@@ -12,6 +12,8 @@
     "build": "npm run build --workspace=@api-open/shared && npm run build --workspace=@api-open/api && npm run build --workspace=@api-open/web",
     "build:web": "npm run build --workspace=@api-open/web",
     "build:api": "npm run build --workspace=@api-open/api",
+    "vercel:api": "npm run build --workspace=@api-open/shared && npx prisma generate --schema=apps/api/prisma/schema.prisma && npm run build --workspace=@api-open/api",
+    "vercel:web": "npm run build --workspace=@api-open/shared && npm run build --workspace=@api-open/web",
     "test": "node --experimental-strip-types --test tests/core.test.ts"
   }
 }
