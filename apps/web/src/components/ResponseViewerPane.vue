@@ -341,14 +341,17 @@ function formatBytes(bytes: number): string {
 <template>
   <div
     v-if="tab"
-    class="response-section kt-card kt-card-bordered"
-    :class="
+    v-loading="tab.loading"
+    element-loading-text="Sending request..."
+    class="response-section"
+    :class="[
+      isResponseHorizontal ? 'is-horizontal' : 'is-vertical',
       tab.error
         ? 'resp-accent-error'
         : tab.response
           ? `resp-accent-${statusClass(tab.response.statusCode)}`
-          : ''
-    "
+          : '',
+    ]"
     :style="
       isResponseHorizontal
         ? {
@@ -797,6 +800,14 @@ function formatBytes(bytes: number): string {
   overflow: hidden;
   min-width: 240px;
   min-height: 220px;
+  border-radius: 0;
+  border: none;
+}
+.response-section.is-vertical {
+  border-top: 1px solid var(--ao-border);
+}
+.response-section.is-horizontal {
+  border-left: 1px solid var(--ao-border);
 }
 .response-section :deep(.el-tabs__header) {
   margin: 0 0 6px;

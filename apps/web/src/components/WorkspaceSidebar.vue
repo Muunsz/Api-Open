@@ -493,7 +493,7 @@ defineExpose({
     class="sidebar desktop-sidebar"
   >
     <el-tabs v-model="sidebarTab" stretch>
-      <el-tab-pane label="Collections" name="collections">
+      <el-tab-pane v-loading="ws.isBusy" label="Collections" name="collections">
         <template v-if="ws.isAuthenticated">
           <div class="sidebar-toolbar">
             <el-text size="small" type="info" style="font-weight: 600">

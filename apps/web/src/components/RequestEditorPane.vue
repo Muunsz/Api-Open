@@ -979,9 +979,9 @@ async function handleAiGenerateTests() {
   min-height: 160px;
   overflow-y: auto;
   background: var(--ao-surface);
-  border: 1px solid var(--ao-border);
-  border-radius: 8px;
-  padding: 10px 14px;
+  border: none;
+  border-radius: 0;
+  padding: 8px 12px;
 }
 .body-controls {
   display: flex;

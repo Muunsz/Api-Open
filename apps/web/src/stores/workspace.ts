@@ -159,6 +159,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     localStorage.getItem('api_open_active_env_v1') || '',
   );
   const loadingData = ref(false);
+  const busyCount = ref(0);
+  const isBusy = computed(() => loadingData.value || busyCount.value > 0);
+  async function withBusy<T>(fn: () => Promise<T>): Promise<T> {
+    busyCount.value++;
+    try {
+      return await fn();
+    } finally {
+      busyCount.value = Math.max(0, busyCount.value - 1);
+    }
+  }
 
   watch(activeWorkspaceId, (id) => {
     try {
@@ -601,7 +611,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function refreshCollections(workspaceId = activeWorkspaceId.value) {
     if (!accessToken.value || !workspaceId) return;
     if (inFlightCollections) return inFlightCollections;
-    inFlightCollections = (async () => {
+    inFlightCollections = withBusy(async () => {
       try {
         collections.value = await workspaceApi.listCollections(
           accessToken.value!,
@@ -610,14 +620,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       } finally {
         inFlightCollections = null;
       }
-    })();
+    });
     return inFlightCollections;
   }
 
   async function refreshEnvironments(workspaceId = activeWorkspaceId.value) {
     if (!accessToken.value || !workspaceId) return;
     if (inFlightEnvironments) return inFlightEnvironments;
-    inFlightEnvironments = (async () => {
+    inFlightEnvironments = withBusy(async () => {
       try {
         const envs = await workspaceApi.listEnvironments(
           accessToken.value!,
@@ -633,7 +643,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       } finally {
         inFlightEnvironments = null;
       }
-    })();
+    });
     return inFlightEnvironments;
   }
 
@@ -1045,18 +1055,20 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     parentId?: string,
   ) {
     if (!accessToken.value || !activeWorkspaceId.value) return;
-    const createdCol = await workspaceApi.createCollection(
-      accessToken.value,
-      activeWorkspaceId.value,
-      node.name,
-      parentId,
-    );
-    for (const req of node.requests) {
-      await workspaceApi.createRequest(accessToken.value, createdCol.id, req);
-    }
-    for (const sub of node.folders) {
-      await saveImportedNode(sub, createdCol.id);
-    }
+    await withBusy(async () => {
+      const createdCol = await workspaceApi.createCollection(
+        accessToken.value!,
+        activeWorkspaceId.value,
+        node.name,
+        parentId,
+      );
+      for (const req of node.requests) {
+        await workspaceApi.createRequest(accessToken.value!, createdCol.id, req);
+      }
+      for (const sub of node.folders) {
+        await saveImportedNode(sub, createdCol.id);
+      }
+    });
   }
 
   async function importPostmanJson(jsonText: string) {
@@ -1130,6 +1142,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     activeEnvId,
     activeVariablesMap,
     loadingData,
+    isBusy,
+    withBusy,
     needsPasswordSetup,
     initAuth,
     signIn,

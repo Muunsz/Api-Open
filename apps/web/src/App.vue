@@ -743,6 +743,7 @@ async function openEnvDialog(envId?: string) {
   </div>
 
   <el-container v-else class="app-shell">
+    <div v-if="ws.isBusy || tab?.loading" class="global-loading-bar" />
     <div
       class="shell-content"
       :class="{ 'navbar-bottom': settings.navbarPosition === 'bottom' }"
