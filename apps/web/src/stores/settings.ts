@@ -65,7 +65,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const interceptor = ref<InterceptorMode>(initial.interceptor);
   const queryEncoding = ref<QueryEncodingMode>(initial.queryEncoding);
   const navbarPosition = ref<NavbarPosition>(initial.navbarPosition);
-  const sidebarPosition = ref<PanelPosition>(initial.sidebarPosition);
+  const sidebarPosition = ref<PanelPosition>(
+    initial.sidebarPosition === 'right' ? 'right' : 'left',
+  );
   const sidebarHidden = ref<boolean>(initial.sidebarHidden);
   const sidebarWidth = ref<number>(initial.sidebarWidth);
   const sidebarHeight = ref<number>(initial.sidebarHeight);

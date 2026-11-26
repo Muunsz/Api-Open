@@ -234,8 +234,6 @@ async function handleChangePassword() {
             <el-radio-group v-model="settings.sidebarPosition">
               <el-radio-button value="left">Left</el-radio-button>
               <el-radio-button value="right">Right</el-radio-button>
-              <el-radio-button value="top">Top</el-radio-button>
-              <el-radio-button value="bottom">Bottom</el-radio-button>
             </el-radio-group>
           </el-form-item>
 

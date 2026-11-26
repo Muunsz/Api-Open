@@ -76,9 +76,9 @@
 .workspace-tab-header {
   display: flex;
   align-items: flex-end;
-  gap: 0;
+  gap: 6px;
   flex-shrink: 0;
-  padding: 0;
+  padding: 6px 12px 0;
   background: var(--ao-surface-2);
   border-bottom: 1px solid var(--ao-border);
   position: relative;
@@ -120,9 +120,9 @@
   height: 36px;
   line-height: 1;
   padding: 0 14px !important;
-  border: none !important;
-  border-right: 1px solid var(--ao-border) !important;
-  border-radius: 0 !important;
+  border: 1px solid var(--ao-border) !important;
+  border-bottom: none !important;
+  border-radius: 8px 8px 0 0 !important;
   background: color-mix(in srgb, var(--ao-surface-2) 55%, transparent);
   color: var(--ao-text-muted);
   transition:
@@ -148,6 +148,7 @@
   color: var(--el-color-primary) !important;
   border-color: var(--ao-border) !important;
   border-bottom: 2px solid var(--ao-surface) !important;
+  box-shadow: inset 0 2px 0 var(--el-color-primary);
   margin-bottom: -1px;
   position: relative;
   z-index: 3;
@@ -197,6 +198,7 @@
   background: var(--ao-surface);
   border-color: var(--ao-border);
   border-bottom: 2px solid var(--ao-surface);
+  box-shadow: inset 0 2px 0 var(--el-color-primary);
   margin-bottom: -1px;
   color: var(--el-color-primary);
   position: relative;
