@@ -336,6 +336,15 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   return `${(bytes / 1024).toFixed(2)} KB`;
 }
+
+const responseSectionClasses = computed(() => [
+  isResponseHorizontal.value ? 'is-horizontal' : 'is-vertical',
+  tab.value?.error
+    ? 'resp-accent-error'
+    : tab.value?.response
+      ? `resp-accent-${statusClass(tab.value.response.statusCode)}`
+      : '',
+]);
 </script>
 
 <template>
@@ -344,14 +353,7 @@ function formatBytes(bytes: number): string {
     v-loading="tab.loading"
     element-loading-text="Sending request..."
     class="response-section"
-    :class="[
-      isResponseHorizontal ? 'is-horizontal' : 'is-vertical',
-      tab.error
-        ? 'resp-accent-error'
-        : tab.response
-          ? `resp-accent-${statusClass(tab.response.statusCode)}`
-          : '',
-    ]"
+    :class="responseSectionClasses"
     :style="
       isResponseHorizontal
         ? {
