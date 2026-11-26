@@ -20,6 +20,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    if (process.env.VERCEL) return;
     this.timer = setInterval(() => {
       this.tickDueMonitors().catch(() => undefined);
     }, 60_000);
