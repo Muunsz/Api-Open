@@ -1,9 +1,6 @@
 import * as crypto from 'node:crypto';
 import type { AuthConfig } from '@api-open/shared';
 
-const loadJose = () =>
-  Function('return import("jose")')() as Promise<typeof import('jose')>;
-
 function sha256Hex(data: string | Buffer): string {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
@@ -19,15 +16,18 @@ export async function buildJwtHeader(
   if (auth.payload?.trim()) {
     parsedPayload = JSON.parse(auth.payload) as Record<string, unknown>;
   }
-  const { SignJWT } = await loadJose();
-  const secretKey = new TextEncoder().encode(auth.secret);
-  const jwt = await new SignJWT(parsedPayload)
-    .setProtectedHeader({ alg: auth.algorithm || 'HS256', typ: 'JWT' })
-    .setIssuedAt()
-    .sign(secretKey);
+  const alg = auth.algorithm === 'HS512' ? 'HS512' : 'HS256';
+  const headerB64 = Buffer.from(JSON.stringify({ alg, typ: 'JWT' })).toString('base64url');
+  const payloadB64 = Buffer.from(
+    JSON.stringify({ ...parsedPayload, iat: Math.floor(Date.now() / 1000) }),
+  ).toString('base64url');
+  const sig = crypto
+    .createHmac(alg === 'HS512' ? 'sha512' : 'sha256', auth.secret)
+    .update(`${headerB64}.${payloadB64}`)
+    .digest('base64url');
 
   const prefix = auth.headerPrefix?.trim() || 'Bearer';
-  return `${prefix} ${jwt}`;
+  return `${prefix} ${headerB64}.${payloadB64}.${sig}`;
 }
 
 export function buildHawkHeader(
