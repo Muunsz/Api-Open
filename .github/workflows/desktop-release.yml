@@ -148,9 +148,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
         run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" all-assets/* --clobber
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" all-assets/* --repo "$REPO" --clobber
           else
-            gh release create "$TAG" all-assets/* --title "$TAG" --generate-notes
+            gh release create "$TAG" all-assets/* --repo "$REPO" --target "$SHA" --title "$TAG" --generate-notes
           fi
