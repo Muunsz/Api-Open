@@ -148,8 +148,17 @@ export function downloadDesktopEditionScript(
   edition: 'electron' | 'csharp' | 'cpp' | 'java',
   os: 'win' | 'mac' | 'linux',
   appUrl = window.location.origin,
-) {
+): string {
   const repoUrl = 'https://github.com/Muunsz/Api-Open.git';
+  const editionLabel =
+    edition === 'electron'
+      ? 'Electron'
+      : edition === 'csharp'
+        ? 'CSharp'
+        : edition === 'cpp'
+          ? 'Cpp'
+          : 'Java';
+
   if (os === 'win') {
     const runCmd =
       edition === 'electron'
@@ -170,12 +179,9 @@ export function downloadDesktopEditionScript(
       runCmd,
       'pause',
     ].join('\r\n');
-    downloadBlobFile(
-      script,
-      `Api-Open-${edition}-Windows.bat`,
-      'application/bat',
-    );
-    return;
+    const fileName = `Api-Open-${editionLabel}-Windows.bat`;
+    downloadBlobFile(script, fileName, 'application/bat');
+    return fileName;
   }
 
   const runCmd =
@@ -195,11 +201,13 @@ export function downloadDesktopEditionScript(
 
   const ext = os === 'mac' ? 'command' : 'sh';
   const label = os === 'mac' ? 'macOS' : 'Linux';
+  const fileName = `Api-Open-${editionLabel}-${label}.${ext}`;
   downloadBlobFile(
     script,
-    `Api-Open-${edition}-${label}.${ext}`,
+    fileName,
     os === 'mac' ? 'text/plain' : 'text/x-shellscript',
   );
+  return fileName;
 }
 
 export function fileToBase64(file: File): Promise<string> {

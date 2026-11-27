@@ -74,16 +74,25 @@ async function installPwaApp() {
   );
 }
 
+const downloadingEdition = ref<DesktopEdition['id'] | 'launcher' | null>(
+  null,
+);
+
 function downloadLauncherFor(os: OsKey) {
-  if (os === 'win') {
-    downloadWindowsLauncherScript();
-    ElMessage.success('Downloaded Api-Open-Windows.bat');
-  } else if (os === 'mac') {
-    downloadMacLauncherScript();
-    ElMessage.success('Downloaded Api-Open-macOS.command');
-  } else {
-    downloadLinuxLauncherScript();
-    ElMessage.success('Downloaded Api-Open-Linux.sh');
+  downloadingEdition.value = 'launcher';
+  try {
+    if (os === 'win') {
+      downloadWindowsLauncherScript();
+      ElMessage.success('Downloaded Api-Open-Windows.bat');
+    } else if (os === 'mac') {
+      downloadMacLauncherScript();
+      ElMessage.success('Downloaded Api-Open-macOS.command');
+    } else {
+      downloadLinuxLauncherScript();
+      ElMessage.success('Downloaded Api-Open-Linux.sh');
+    }
+  } finally {
+    downloadingEdition.value = null;
   }
 }
 
@@ -95,8 +104,13 @@ interface DesktopEdition {
 }
 
 function downloadEdition(editionId: DesktopEdition['id']) {
-  downloadDesktopEditionScript(editionId, activeOs.value);
-  ElMessage.success(`Downloaded ${editionId.toUpperCase()} launcher`);
+  downloadingEdition.value = editionId;
+  try {
+    const fileName = downloadDesktopEditionScript(editionId, activeOs.value);
+    ElMessage.success(`Downloaded ${fileName}`);
+  } finally {
+    downloadingEdition.value = null;
+  }
 }
 
 const osMeta = computed(() => {
@@ -244,6 +258,7 @@ const osMeta = computed(() => {
           type="primary"
           size="small"
           :icon="Download"
+          :loading="downloadingEdition === 'launcher'"
           @click="downloadLauncherFor(activeOs)"
         >
           {{ osMeta.launcherLabel }}
@@ -270,6 +285,7 @@ const osMeta = computed(() => {
             plain
             size="small"
             :icon="Download"
+            :loading="downloadingEdition === ed.id"
             style="width: 100%; margin-top: 6px"
             @click="downloadEdition(ed.id)"
           >

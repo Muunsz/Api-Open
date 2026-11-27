@@ -11,14 +11,19 @@ import { MailService } from './mail.service';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const port = Number(config.get('SMTP_PORT') ?? 465);
+        const host = config.get<string>('SMTP_HOST') || 'smtp.gmail.com';
+        const rawPass = config.get<string>('SMTP_PASS') || '';
+        const pass = host.includes('gmail')
+          ? rawPass.replace(/\s+/g, '')
+          : rawPass.trim();
         return {
           transport: {
-            host: config.get<string>('SMTP_HOST') || 'smtp.gmail.com',
+            host,
             port,
             secure: port === 465,
             auth: {
-              user: config.get<string>('SMTP_USER') || '',
-              pass: config.get<string>('SMTP_PASS') || '',
+              user: (config.get<string>('SMTP_USER') || '').trim(),
+              pass,
             },
           },
           defaults: {
