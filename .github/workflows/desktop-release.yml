@@ -61,7 +61,7 @@ jobs:
             FILE=$(find apps/desktop/dist -maxdepth 1 -name "*.AppImage" | head -n 1)
           fi
           cp "$FILE" "release-assets/${{ matrix.asset_name }}"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: electron-${{ matrix.platform }}
           path: release-assets/${{ matrix.asset_name }}
@@ -81,7 +81,7 @@ jobs:
         run: |
           mkdir -p release-assets
           cp apps/desktop-csharp/publish/ApiOpen.Desktop.exe release-assets/Api-Open-CSharp-Windows.exe
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: csharp-win
           path: release-assets/Api-Open-CSharp-Windows.exe
@@ -90,9 +90,6 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
       - name: Download WebView2 SDK
         working-directory: apps/desktop-cpp
         shell: pwsh
@@ -111,7 +108,7 @@ jobs:
           mkdir -p release-assets
           EXE=$(find apps/desktop-cpp/build -name "ApiOpenDesktop.exe" | head -n 1)
           cp "$EXE" release-assets/Api-Open-Cpp-Windows.exe
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: cpp-win
           path: release-assets/Api-Open-Cpp-Windows.exe
@@ -134,7 +131,7 @@ jobs:
           mkdir -p release-assets
           JAR=$(find apps/desktop-java/target -maxdepth 1 -name "*.jar" ! -name "original-*" | head -n 1)
           cp "$JAR" release-assets/Api-Open-Java.jar
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: java-jar
           path: release-assets/Api-Open-Java.jar
@@ -143,11 +140,17 @@ jobs:
     needs: [build-electron, build-csharp, build-cpp, build-java]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: all-assets
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          files: all-assets/*
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" all-assets/* --clobber
+          else
+            gh release create "$TAG" all-assets/* --title "$TAG" --generate-notes
+          fi
