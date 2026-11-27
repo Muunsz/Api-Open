@@ -16,6 +16,7 @@
   "build": {
     "appId": "com.apiopen.desktop",
     "productName": "Api-Open",
+    "electronVersion": "35.0.0",
     "npmRebuild": false,
     "files": ["main.js", "preload.js"],
     "extraResources": [

@@ -3,6 +3,7 @@
 #endif
 
 #include <windows.h>
+#include <objbase.h>
 #include <winhttp.h>
 #include <wrl.h>
 #include <WebView2.h>
@@ -90,7 +91,8 @@ json ExecuteWinHttpRequest(const json& payload) {
       if (k.empty()) continue;
       urlStr += (hasQuery ? "&" : "?");
       hasQuery = true;
-      urlStr += UrlEncode(k) + "=" + UrlEncode(v.is_null() ? "" : v.dump().front() == '"' ? v.get<std::string>() : v.dump());
+      std::string qVal = v.is_null() ? std::string("") : (v.is_string() ? v.get<std::string>() : v.dump());
+      urlStr += UrlEncode(k) + "=" + UrlEncode(qVal);
     }
   }
 

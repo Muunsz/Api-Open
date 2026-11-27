@@ -42,7 +42,9 @@ jobs:
         working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npx electron-builder --${{ matrix.platform }} --publish never
+        run: |
+          npm install --no-workspaces --no-audit --no-fund
+          npx electron-builder --${{ matrix.platform }} --publish never
       - name: Collect Electron artifact
         shell: bash
         run: |
