@@ -25,8 +25,19 @@
         "to": "web-dist"
       }
     ],
-    "win": { "target": "nsis" },
-    "mac": { "target": "dmg", "identity": null },
-    "linux": { "target": "AppImage", "category": "Development" }
+    "win": {
+      "target": "nsis",
+      "icon": "../web/public/API-OPEN-LOGO.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "identity": null,
+      "icon": "../web/public/API-OPEN-LOGO.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Development",
+      "icon": "../web/public/API-OPEN-LOGO.png"
+    }
   }
 }

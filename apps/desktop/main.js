@@ -271,48 +271,33 @@ async function executeLocalDesktopRequest(payload) {
   };
 }
 
+function resolveAppIcon() {
+  const iconFile =
+    process.platform === 'win32' ? 'API-OPEN-LOGO.ico' : 'API-OPEN-LOGO.png';
+  const candidates = [
+    path.join(process.resourcesPath, 'web-dist', iconFile),
+    path.join(__dirname, '../web/dist', iconFile),
+    path.join(__dirname, '../web/public', iconFile),
+  ];
+  return candidates.find((p) => fs.existsSync(p));
+}
+
 function setupApplicationMenu() {
-  const isMac = process.platform === 'darwin';
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null);
+    return;
+  }
   const template = [
-    ...(isMac ? [{ role: 'appMenu' }] : []),
-    {
-      label: 'File',
-      submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { type: 'separator' },
-        isMac ? { role: 'close' } : { role: 'quit' },
-      ],
-    },
+    { role: 'appMenu' },
     { role: 'editMenu' },
-    {
-      label: 'View',
-      submenu: [
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' },
-        { role: 'toggleDevTools' },
-      ],
-    },
     { role: 'windowMenu' },
-    {
-      label: 'Help',
-      submenu: [
-        {
-          label: 'GitHub Releases',
-          click: () =>
-            shell.openExternal('https://github.com/Muunsz/Api-Open/releases'),
-        },
-      ],
-    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function createWindow() {
   const state = loadWindowState();
+  const appIcon = resolveAppIcon();
   const win = new BrowserWindow({
     width: state.width,
     height: state.height,
@@ -321,13 +306,17 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: 'Api-Open',
-    autoHideMenuBar: false,
+    ...(appIcon ? { icon: appIcon } : {}),
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  if (process.platform !== 'darwin') {
+    win.setMenuBarVisibility(false);
+  }
 
   if (state.isMaximized) {
     win.maximize();
