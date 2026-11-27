@@ -8,10 +8,13 @@
 #include <WebView2.h>
 #include <nlohmann/json.hpp>
 
+#include <cctype>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>

@@ -1,6 +1,8 @@
 {
   "name": "@api-open/desktop",
   "version": "0.1.0",
+  "description": "Api-Open Desktop Client",
+  "author": "Api-Open",
   "private": true,
   "main": "main.js",
   "scripts": {
@@ -14,6 +16,7 @@
   "build": {
     "appId": "com.apiopen.desktop",
     "productName": "Api-Open",
+    "npmRebuild": false,
     "files": ["main.js", "preload.js"],
     "extraResources": [
       {
@@ -22,7 +25,7 @@
       }
     ],
     "win": { "target": "nsis" },
-    "mac": { "target": "dmg" },
-    "linux": { "target": "AppImage" }
+    "mac": { "target": "dmg", "identity": null },
+    "linux": { "target": "AppImage", "category": "Development" }
   }
 }

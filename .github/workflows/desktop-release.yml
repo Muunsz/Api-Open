@@ -40,6 +40,8 @@ jobs:
       - run: npm run build --workspace=@api-open/shared && npm run build --workspace=@api-open/web
       - name: Build Electron installer
         working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npx electron-builder --${{ matrix.platform }} --publish never
       - name: Collect Electron artifact
         shell: bash
