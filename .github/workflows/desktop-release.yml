@@ -38,6 +38,10 @@ jobs:
           cache: npm
       - run: npm install
       - run: npm run build --workspace=@api-open/shared && npm run build --workspace=@api-open/web
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - name: Build Electron installer
         working-directory: apps/desktop
         env:
