@@ -5,6 +5,7 @@ import type {
   KeyValueItem,
 } from '@api-open/shared';
 import type { ApiRequestDto } from '../api/workspace';
+import { unwrapStringifiedBody } from './bodyFormat';
 import type { CollectionTreeNode } from '../stores/workspace';
 
 interface PostmanKv {
@@ -103,7 +104,7 @@ function parseBody(body?: NonNullable<PostmanItem['request']>['body']): BodyConf
     const lang = body.options?.raw?.language;
     const rawType =
       lang === 'json' || lang === 'xml' || lang === 'html' ? lang : 'text';
-    return { mode: 'raw', raw: body.raw ?? '', rawType };
+    return { mode: 'raw', raw: unwrapStringifiedBody(body.raw), rawType };
   }
   if (body.mode === 'urlencoded') {
     return { mode: 'urlencoded', urlencoded: mapKvList(body.urlencoded) };

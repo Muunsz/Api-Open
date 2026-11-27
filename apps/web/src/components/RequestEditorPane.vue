@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import type { AuthConfig, FormDataItem } from '@api-open/shared';
 import { Delete, Plus } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { unwrapStringifiedBody } from '../utils/bodyFormat';
 import { workspaceApi, type RequestCommentDto } from '../api/workspace';
 import { fileToBase64 } from '../services/exportService';
 import {
@@ -183,14 +184,15 @@ const oauth2Auth = computed({
 
 function formatJsonBody() {
   if (!tab.value?.body.raw) return;
+  const unwrapped = unwrapStringifiedBody(tab.value.body.raw);
+  tab.value.body.raw = unwrapped;
   try {
-    tab.value.body.raw = JSON.stringify(
-      JSON.parse(tab.value.body.raw),
-      null,
-      2,
-    );
+    const parsed = JSON.parse(unwrapped);
+    if (parsed !== null && typeof parsed === 'object') {
+      tab.value.body.raw = JSON.stringify(parsed, null, 2);
+    }
   } catch {
-    // ignore invalid json
+    // keep unwrapped text (e.g. JSON with comments)
   }
 }
 

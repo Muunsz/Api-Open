@@ -17,6 +17,7 @@ import {
 } from '../api/proxy';
 import { type ApiRequestDto, workspaceApi } from '../api/workspace';
 import { parseCurlCommand } from '../utils/curlParser';
+import { unwrapStringifiedBody } from '../utils/bodyFormat';
 import {
   runScriptInSandbox,
   type TestCaseResult,
@@ -254,7 +255,10 @@ export const useTabsStore = defineStore('tabs', () => {
         : [createEmptyRow()],
       pathParams: req.pathParams?.length ? [...req.pathParams] : [],
       auth: req.auth ?? { type: 'none' },
-      body: req.body ?? { mode: 'none' },
+      body:
+        req.body?.mode === 'raw'
+          ? { ...req.body, raw: unwrapStringifiedBody(req.body.raw) }
+          : (req.body ?? { mode: 'none' }),
       examples: req.examples?.length ? [...req.examples] : [],
       settings: req.settings ?? {
         followRedirects: true,
