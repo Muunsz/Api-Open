@@ -62,7 +62,14 @@ export const workspaceService = {
     email: string,
     role: WorkspaceRole,
   ) =>
-    apiFetch<{ addedImmediately: boolean; emailSent: boolean; email: string }>(
+    apiFetch<{
+      addedImmediately: boolean;
+      notified: boolean;
+      email: string;
+      role: string;
+      workspaceName: string;
+      inviterLabel: string;
+    }>(
       `/workspaces/${workspaceId}/invite`,
       token,
       {

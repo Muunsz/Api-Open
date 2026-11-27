@@ -101,12 +101,51 @@ interface DesktopEdition {
   name: string;
   badge: string;
   desc: string;
+  releaseAsset: string;
 }
 
-function downloadEdition(editionId: DesktopEdition['id']) {
-  downloadingEdition.value = editionId;
+let cachedReleaseAssets: Map<string, string> | null = null;
+
+async function getReleaseAssetsMap(): Promise<Map<string, string>> {
+  if (cachedReleaseAssets) return cachedReleaseAssets;
+  const map = new Map<string, string>();
   try {
-    const fileName = downloadDesktopEditionScript(editionId, activeOs.value);
+    const res = await fetch(
+      'https://api.github.com/repos/Muunsz/Api-Open/releases/latest',
+    );
+    if (res.ok) {
+      const data = (await res.json()) as {
+        assets?: Array<{ name: string; browser_download_url: string }>;
+      };
+      for (const a of data.assets ?? []) {
+        map.set(a.name, a.browser_download_url);
+      }
+      cachedReleaseAssets = map;
+    }
+  } catch {
+    // fallback to script launcher
+  }
+  return map;
+}
+
+async function downloadEdition(edition: DesktopEdition) {
+  downloadingEdition.value = edition.id;
+  try {
+    const assets = await getReleaseAssetsMap();
+    const binaryUrl = assets.get(edition.releaseAsset);
+    if (binaryUrl) {
+      const a = document.createElement('a');
+      a.href = binaryUrl;
+      a.download = edition.releaseAsset;
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      ElMessage.success(`Downloading ${edition.releaseAsset}`);
+      return;
+    }
+
+    const fileName = downloadDesktopEditionScript(edition.id, activeOs.value);
     ElMessage.success(`Downloaded ${fileName}`);
   } finally {
     downloadingEdition.value = null;
@@ -125,24 +164,28 @@ const osMeta = computed(() => {
           name: 'Electron Desktop',
           badge: 'NSIS .exe',
           desc: 'Node.js IPC Desktop Agent for CORS-free localhost & external APIs.',
+          releaseAsset: 'Api-Open-Electron-Windows.exe',
         },
         {
           id: 'csharp',
           name: 'C# (.NET 8 WPF + WebView2)',
           badge: 'Native Win',
           desc: 'Lightweight native Windows executable with C# HttpClient agent.',
+          releaseAsset: 'Api-Open-CSharp-Windows.exe',
         },
         {
           id: 'cpp',
           name: 'C++17 (Win32 + WebView2)',
           badge: 'WinHTTP',
           desc: 'Zero-runtime C++ native desktop wrapper using WinHTTP.',
+          releaseAsset: 'Api-Open-Cpp-Windows.exe',
         },
         {
           id: 'java',
           name: 'Java 17 (JavaFX WebView)',
           badge: 'JVM',
           desc: 'Cross-platform Java desktop app with native HttpClient bridge.',
+          releaseAsset: 'Api-Open-Java.jar',
         },
       ] satisfies DesktopEdition[],
     };
@@ -158,12 +201,14 @@ const osMeta = computed(() => {
           name: 'Electron Desktop',
           badge: '.dmg',
           desc: 'Universal macOS desktop app with built-in Node.js Local Agent.',
+          releaseAsset: 'Api-Open-Electron-macOS.dmg',
         },
         {
           id: 'java',
           name: 'Java 17 (JavaFX WebView)',
           badge: 'JVM',
           desc: 'Cross-platform Java desktop app with native HttpClient bridge.',
+          releaseAsset: 'Api-Open-Java.jar',
         },
       ] satisfies DesktopEdition[],
     };
@@ -178,12 +223,14 @@ const osMeta = computed(() => {
         name: 'Electron Desktop',
         badge: '.AppImage',
         desc: 'Linux desktop app with built-in Node.js Local Agent.',
+        releaseAsset: 'Api-Open-Electron-Linux.AppImage',
       },
       {
         id: 'java',
         name: 'Java 17 (JavaFX WebView)',
         badge: 'JVM',
         desc: 'Cross-platform Java desktop app with native HttpClient bridge.',
+        releaseAsset: 'Api-Open-Java.jar',
       },
     ] satisfies DesktopEdition[],
   };
@@ -287,7 +334,7 @@ const osMeta = computed(() => {
             :icon="Download"
             :loading="downloadingEdition === ed.id"
             style="width: 100%; margin-top: 6px"
-            @click="downloadEdition(ed.id)"
+            @click="downloadEdition(ed)"
           >
             Download
           </el-button>

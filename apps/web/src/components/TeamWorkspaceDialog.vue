@@ -45,17 +45,11 @@ async function handleInviteMember() {
   try {
     const res = await ws.inviteMember(inviteEmail.value, inviteRole.value);
     inviteEmail.value = '';
-    if (!res.emailSent) {
-      ElMessage.warning(
-        res.addedImmediately
-          ? 'Member added, but invitation email failed to send (check SMTP settings)'
-          : 'Invitation created, but email failed to send (check SMTP settings)',
-      );
+    if (res.addedImmediately) {
+      ElMessage.success('Member added & push notification sent to their account');
     } else {
-      ElMessage.success(
-        res.addedImmediately
-          ? 'Member added & invitation email sent'
-          : 'Invitation email sent',
+      ElMessage.warning(
+        'Account with this email is not registered yet. Ask them to sign up first.',
       );
     }
   } catch (err) {

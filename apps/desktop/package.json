@@ -15,6 +15,12 @@
     "appId": "com.apiopen.desktop",
     "productName": "Api-Open",
     "files": ["main.js", "preload.js"],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "web-dist"
+      }
+    ],
     "win": { "target": "nsis" },
     "mac": { "target": "dmg" },
     "linux": { "target": "AppImage" }

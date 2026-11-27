@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
 import type { User } from '@supabase/supabase-js';
 import type { AuthConfig, EnvVariable, KeyValueItem } from '@api-open/shared';
+import { ElNotification } from 'element-plus';
 import { supabase } from '../lib/supabase';
 import {
   type ApiRequestDto,
@@ -757,6 +758,47 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     trashItems.value = [];
   }
 
+  let userNotifyChannel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
+  watch(
+    () => user.value?.email,
+    (email) => {
+      if (userNotifyChannel && supabase) {
+        supabase.removeChannel(userNotifyChannel);
+        userNotifyChannel = null;
+      }
+      if (!supabase || !email) return;
+      const ch = supabase.channel(`user-notify:${email.toLowerCase()}`);
+      ch.on(
+        'broadcast',
+        { event: 'workspace_invite' },
+        (msg: {
+          payload?: {
+            workspaceId?: string;
+            workspaceName?: string;
+            role?: string;
+            inviterLabel?: string;
+          };
+        }) => {
+          const p = msg.payload ?? {};
+          const text = `${p.inviterLabel || 'A teammate'} invited you as ${p.role || 'EDITOR'} to workspace "${p.workspaceName || 'Workspace'}"`;
+          ElNotification({
+            title: 'Workspace Invitation',
+            message: text,
+            type: 'success',
+            duration: 6000,
+          });
+          useConsoleStore().addLog({
+            type: 'activity',
+            message: text,
+          });
+          loadWorkspaces().catch(() => undefined);
+        },
+      ).subscribe();
+      userNotifyChannel = ch;
+    },
+    { immediate: true },
+  );
+
   let presenceChannel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
   watch(
     () => [activeWorkspaceId.value, user.value?.email] as const,
@@ -993,6 +1035,25 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       email,
       role,
     );
+    if (res.addedImmediately && supabase) {
+      const ch = supabase.channel(`user-notify:${res.email.toLowerCase()}`);
+      ch.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          ch.send({
+            type: 'broadcast',
+            event: 'workspace_invite',
+            payload: {
+              workspaceId: activeWorkspaceId.value,
+              workspaceName: res.workspaceName,
+              role: res.role,
+              inviterLabel: res.inviterLabel,
+            },
+          }).finally(() => {
+            supabase?.removeChannel(ch);
+          });
+        }
+      });
+    }
     await ensureMembersLoaded(true);
     return res;
   }

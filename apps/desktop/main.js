@@ -225,7 +225,14 @@ function createWindow() {
 
   const targetUrl = process.env.API_OPEN_URL || 'http://localhost:5173';
   win.loadURL(targetUrl).catch(() => {
-    win.loadFile(path.join(__dirname, '../web/dist/index.html'));
+    const packagedDist = path.join(process.resourcesPath, 'web-dist', 'index.html');
+    const localDist = path.join(__dirname, '../web/dist/index.html');
+    const fs = require('node:fs');
+    if (fs.existsSync(packagedDist)) {
+      win.loadFile(packagedDist);
+    } else {
+      win.loadFile(localDist);
+    }
   });
 }
 

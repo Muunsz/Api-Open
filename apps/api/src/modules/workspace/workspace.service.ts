@@ -130,9 +130,16 @@ export class WorkspaceService {
     });
     if (!workspace) throw new BadRequestException('Workspace not found');
 
+    const cleanEmail = email.trim().toLowerCase();
     const targetUser = await this.prisma.user.findUnique({
-      where: { email: email.trim().toLowerCase() },
+      where: { email: cleanEmail },
     });
+
+    const inviter = await this.prisma.user.findUnique({
+      where: { id: inviterId },
+      select: { name: true, email: true },
+    });
+    const inviterLabel = inviter?.name || inviter?.email || 'A teammate';
 
     if (targetUser) {
       await this.prisma.workspaceMember.upsert({
@@ -142,39 +149,24 @@ export class WorkspaceService {
         update: { role },
         create: { workspaceId, userId: targetUser.id, role },
       });
+
+      await this.prisma.activityLog.create({
+        data: {
+          userId: targetUser.id,
+          workspaceId,
+          type: 'activity',
+          message: `${inviterLabel} invited you as ${role} to workspace "${workspace.name}"`,
+        },
+      });
     }
-
-    const inviter = await this.prisma.user.findUnique({
-      where: { id: inviterId },
-      select: { name: true, email: true },
-    });
-    const inviterLabel = inviter?.name || inviter?.email || 'A teammate';
-    const appUrl =
-      process.env.CORS_ORIGIN?.split(',')[0]?.trim() || 'http://localhost:9999';
-
-    const renderedInvite = renderWorkspaceInviteEmail({
-      inviterLabel,
-      workspaceName: workspace.name,
-      role,
-      recipientEmail: email.trim(),
-      appUrl,
-    });
-
-    const mailResult = await this.mailService.sendEmail({
-      to: email.trim(),
-      subject: renderedInvite.subject,
-      userId: inviterId,
-      workspaceId,
-      category: 'invite',
-      text: renderedInvite.text,
-      html: renderedInvite.html,
-    });
 
     return {
       addedImmediately: Boolean(targetUser),
-      emailSent: mailResult.success,
-      email: email.trim(),
+      notified: Boolean(targetUser),
+      email: cleanEmail,
       role,
+      workspaceName: workspace.name,
+      inviterLabel,
     };
   }
 
