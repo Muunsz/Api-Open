@@ -124,8 +124,8 @@ async function handleQuickCreateEnv() {
         <img
           :src="
             settings.effectiveTheme === 'dark'
-              ? '/API-OPEN-FULL.png'
-              : '/API-OPEN-FULL-HITAM.png'
+              ? './API-OPEN-FULL.png'
+              : './API-OPEN-FULL-HITAM.png'
           "
           alt="Api-Open"
           class="brand-full-logo"

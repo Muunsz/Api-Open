@@ -253,8 +253,8 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
         <img
           :src="
             settings.effectiveTheme === 'dark'
-              ? '/API-OPEN-FULL.png'
-              : '/API-OPEN-FULL-HITAM.png'
+              ? './API-OPEN-FULL.png'
+              : './API-OPEN-FULL-HITAM.png'
           "
           alt="Api-Open"
           class="auth-logo-wordmark"

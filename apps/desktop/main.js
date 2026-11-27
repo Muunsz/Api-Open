@@ -1,7 +1,52 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  dialog,
+  ipcMain,
+  shell,
+} = require('electron');
+const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
 const path = require('node:path');
+
+let mainWindow = null;
+
+function getWindowStatePath() {
+  return path.join(app.getPath('userData'), 'window-state.json');
+}
+
+function loadWindowState() {
+  try {
+    const raw = fs.readFileSync(getWindowStatePath(), 'utf8');
+    const parsed = JSON.parse(raw);
+    return {
+      width: Number(parsed.width) || 1360,
+      height: Number(parsed.height) || 860,
+      x: typeof parsed.x === 'number' ? parsed.x : undefined,
+      y: typeof parsed.y === 'number' ? parsed.y : undefined,
+      isMaximized: Boolean(parsed.isMaximized),
+    };
+  } catch {
+    return { width: 1360, height: 860, isMaximized: false };
+  }
+}
+
+function saveWindowState(win) {
+  if (!win || win.isDestroyed()) return;
+  try {
+    const isMaximized = win.isMaximized();
+    const bounds = isMaximized ? win.getNormalBounds() : win.getBounds();
+    fs.writeFileSync(
+      getWindowStatePath(),
+      JSON.stringify({ ...bounds, isMaximized }, null, 2),
+      'utf8',
+    );
+  } catch {
+    // ignore state persistence errors
+  }
+}
 
 function buildRequestTarget(payload) {
   const target = new URL(payload.url);
@@ -69,6 +114,20 @@ function buildHeadersAndBody(payload) {
       bodyBuffer = Buffer.from(params.toString(), 'utf8');
       if (!hasHeader('content-type')) {
         headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      }
+    } else if (mode === 'formdata') {
+      const boundary = `----ApiOpenBoundary${Date.now().toString(16)}`;
+      const parts = [];
+      for (const row of payload.body.formData || []) {
+        if (!row || !row.enabled || !row.key) continue;
+        parts.push(
+          `--${boundary}\r\nContent-Disposition: form-data; name="${String(row.key).replace(/"/g, '\\"')}"\r\n\r\n${row.value ?? ''}\r\n`,
+        );
+      }
+      parts.push(`--${boundary}--\r\n`);
+      bodyBuffer = Buffer.from(parts.join(''), 'utf8');
+      if (!hasHeader('content-type')) {
+        headers['Content-Type'] = `multipart/form-data; boundary=${boundary}`;
       }
     } else if (mode === 'graphql') {
       let variables = {};
@@ -172,7 +231,10 @@ async function executeLocalDesktopRequest(payload) {
     response.headers.location
   ) {
     currentUrl = new URL(response.headers.location, currentUrl);
-    if (response.status === 303 || ((response.status === 301 || response.status === 302) && method === 'POST')) {
+    if (
+      response.status === 303 ||
+      ((response.status === 301 || response.status === 302) && method === 'POST')
+    ) {
       method = 'GET';
       bodyBuffer = null;
     }
@@ -209,13 +271,57 @@ async function executeLocalDesktopRequest(payload) {
   };
 }
 
+function setupApplicationMenu() {
+  const isMac = process.platform === 'darwin';
+  const template = [
+    ...(isMac ? [{ role: 'appMenu' }] : []),
+    {
+      label: 'File',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { type: 'separator' },
+        isMac ? { role: 'close' } : { role: 'quit' },
+      ],
+    },
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+        { role: 'toggleDevTools' },
+      ],
+    },
+    { role: 'windowMenu' },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'GitHub Releases',
+          click: () =>
+            shell.openExternal('https://github.com/Muunsz/Api-Open/releases'),
+        },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function createWindow() {
+  const state = loadWindowState();
   const win = new BrowserWindow({
-    width: 1360,
-    height: 860,
+    width: state.width,
+    height: state.height,
+    x: state.x,
+    y: state.y,
     minWidth: 960,
     minHeight: 640,
     title: 'Api-Open',
+    autoHideMenuBar: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -223,36 +329,86 @@ function createWindow() {
     },
   });
 
-  const fs = require('node:fs');
+  if (state.isMaximized) {
+    win.maximize();
+  }
+
+  win.on('close', () => saveWindowState(win));
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
   const packagedDist = path.join(process.resourcesPath, 'web-dist', 'index.html');
   const localDist = path.join(__dirname, '../web/dist/index.html');
 
   if (process.env.API_OPEN_URL) {
     win.loadURL(process.env.API_OPEN_URL);
-  } else if (app.isPackaged && fs.existsSync(packagedDist)) {
-    win.loadFile(packagedDist);
-  } else {
-    win.loadURL('http://localhost:5173').catch(() => {
-      if (fs.existsSync(packagedDist)) {
-        win.loadFile(packagedDist);
-      } else {
-        win.loadFile(localDist);
-      }
+  } else if (process.env.API_OPEN_DEV === '1') {
+    win.loadURL('http://localhost:9999').catch(() => {
+      if (fs.existsSync(localDist)) win.loadFile(localDist);
     });
+  } else if (fs.existsSync(packagedDist)) {
+    win.loadFile(packagedDist);
+  } else if (fs.existsSync(localDist)) {
+    win.loadFile(localDist);
+  } else {
+    win.loadURL('http://localhost:9999');
   }
+
+  mainWindow = win;
 }
 
-app.whenReady().then(() => {
-  ipcMain.handle('api-open:execute-request', async (_event, payload) => {
-    return executeLocalDesktopRequest(payload);
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.setAsDefaultProtocolClient('apiopen');
+
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
   });
 
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-});
+  app.whenReady().then(() => {
+    setupApplicationMenu();
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+    ipcMain.handle('api-open:execute-request', async (_event, payload) => {
+      return executeLocalDesktopRequest(payload);
+    });
+
+    ipcMain.handle('api-open:save-file', async (_event, options = {}) => {
+      const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+        defaultPath: options.defaultPath,
+        filters: options.filters,
+      });
+      if (canceled || !filePath) return { canceled: true };
+      fs.writeFileSync(filePath, options.content ?? '', 'utf8');
+      return { canceled: false, filePath };
+    });
+
+    ipcMain.handle('api-open:open-file', async (_event, options = {}) => {
+      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        filters: options.filters,
+      });
+      if (canceled || !filePaths.length) return { canceled: true };
+      const content = fs.readFileSync(filePaths[0], 'utf8');
+      return { canceled: false, filePath: filePaths[0], content };
+    });
+
+    createWindow();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
+}

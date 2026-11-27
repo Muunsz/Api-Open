@@ -70,16 +70,14 @@ async function installPwaApp() {
     return;
   }
   ElMessage.info(
-    'Use your browser menu (⋮ -> Cast, save, and share -> Install Api-Open) or download a launcher below.',
+    'Use your browser menu (⋮ -> Cast, save, and share -> Install Api-Open) or download the desktop app below.',
   );
 }
 
-const downloadingEdition = ref<DesktopEdition['id'] | 'launcher' | null>(
-  null,
-);
+const downloadingTarget = ref<'desktop' | 'launcher' | null>(null);
 
 function downloadLauncherFor(os: OsKey) {
-  downloadingEdition.value = 'launcher';
+  downloadingTarget.value = 'launcher';
   try {
     if (os === 'win') {
       downloadWindowsLauncherScript();
@@ -92,16 +90,8 @@ function downloadLauncherFor(os: OsKey) {
       ElMessage.success('Downloaded Api-Open-Linux.sh');
     }
   } finally {
-    downloadingEdition.value = null;
+    downloadingTarget.value = null;
   }
-}
-
-interface DesktopEdition {
-  id: 'electron' | 'csharp' | 'cpp' | 'java';
-  name: string;
-  badge: string;
-  desc: string;
-  releaseAsset: string;
 }
 
 let cachedReleaseAssets: Map<string, string> | null = null;
@@ -128,120 +118,71 @@ async function getReleaseAssetsMap(): Promise<Map<string, string>> {
   return map;
 }
 
-async function downloadEdition(edition: DesktopEdition) {
-  downloadingEdition.value = edition.id;
-  try {
-    const assets = await getReleaseAssetsMap();
-    const binaryUrl = assets.get(edition.releaseAsset);
-    if (binaryUrl) {
-      const a = document.createElement('a');
-      a.href = binaryUrl;
-      a.download = edition.releaseAsset;
-      a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      ElMessage.success(`Downloading ${edition.releaseAsset}`);
-      return;
-    }
-
-    const fileName = downloadDesktopEditionScript(edition.id, activeOs.value);
-    ElMessage.success(`Downloaded ${fileName}`);
-  } finally {
-    downloadingEdition.value = null;
-  }
-}
-
 const osMeta = computed(() => {
   if (activeOs.value === 'win') {
     return {
       title: 'Windows',
-      launcherLabel: 'Download Windows Launcher (.bat)',
+      badge: 'NSIS .exe',
+      releaseAsset: 'Api-Open-Electron-Windows.exe',
+      desktopDesc:
+        'Standalone Electron desktop application for Windows with built-in CORS-free Local Agent, offline bundled UI, and window persistence.',
+      launcherLabel: 'Download Launcher (.bat)',
       launcherHint: 'Opens Api-Open in a dedicated Edge or Chrome app window.',
-      editions: [
-        {
-          id: 'electron',
-          name: 'Electron Desktop',
-          badge: 'NSIS .exe',
-          desc: 'Node.js IPC Desktop Agent for CORS-free localhost & external APIs.',
-          releaseAsset: 'Api-Open-Electron-Windows.exe',
-        },
-        {
-          id: 'csharp',
-          name: 'C# (.NET 8 WPF + WebView2)',
-          badge: 'Native Win',
-          desc: 'Lightweight native Windows executable with C# HttpClient agent.',
-          releaseAsset: 'Api-Open-CSharp-Windows.exe',
-        },
-        {
-          id: 'cpp',
-          name: 'C++17 (Win32 + WebView2)',
-          badge: 'WinHTTP',
-          desc: 'Zero-runtime C++ native desktop wrapper using WinHTTP.',
-          releaseAsset: 'Api-Open-Cpp-Windows.exe',
-        },
-        {
-          id: 'java',
-          name: 'Java 17 (JavaFX WebView)',
-          badge: 'JVM',
-          desc: 'Cross-platform Java desktop app with native HttpClient bridge.',
-          releaseAsset: 'Api-Open-Java.jar',
-        },
-      ] satisfies DesktopEdition[],
     };
   }
   if (activeOs.value === 'mac') {
     return {
       title: 'macOS',
-      launcherLabel: 'Download macOS Launcher (.command)',
-      launcherHint: 'Run chmod +x Api-Open-macOS.command if macOS asks for permission.',
-      editions: [
-        {
-          id: 'electron',
-          name: 'Electron Desktop',
-          badge: '.dmg',
-          desc: 'Universal macOS desktop app with built-in Node.js Local Agent.',
-          releaseAsset: 'Api-Open-Electron-macOS.dmg',
-        },
-        {
-          id: 'java',
-          name: 'Java 17 (JavaFX WebView)',
-          badge: 'JVM',
-          desc: 'Cross-platform Java desktop app with native HttpClient bridge.',
-          releaseAsset: 'Api-Open-Java.jar',
-        },
-      ] satisfies DesktopEdition[],
+      badge: '.dmg',
+      releaseAsset: 'Api-Open-Electron-macOS.dmg',
+      desktopDesc:
+        'Standalone Electron desktop application for macOS with built-in CORS-free Local Agent, offline bundled UI, and native menu.',
+      launcherLabel: 'Download Launcher (.command)',
+      launcherHint:
+        'Run chmod +x Api-Open-macOS.command if macOS asks for permission.',
     };
   }
   return {
     title: 'Linux',
-    launcherLabel: 'Download Linux Launcher (.sh)',
+    badge: '.AppImage',
+    releaseAsset: 'Api-Open-Electron-Linux.AppImage',
+    desktopDesc:
+      'Standalone Electron desktop application for Linux with built-in CORS-free Local Agent and offline bundled UI.',
+    launcherLabel: 'Download Launcher (.sh)',
     launcherHint: 'Run chmod +x Api-Open-Linux.sh before launching.',
-    editions: [
-      {
-        id: 'electron',
-        name: 'Electron Desktop',
-        badge: '.AppImage',
-        desc: 'Linux desktop app with built-in Node.js Local Agent.',
-        releaseAsset: 'Api-Open-Electron-Linux.AppImage',
-      },
-      {
-        id: 'java',
-        name: 'Java 17 (JavaFX WebView)',
-        badge: 'JVM',
-        desc: 'Cross-platform Java desktop app with native HttpClient bridge.',
-        releaseAsset: 'Api-Open-Java.jar',
-      },
-    ] satisfies DesktopEdition[],
   };
 });
+
+async function downloadElectronApp() {
+  downloadingTarget.value = 'desktop';
+  try {
+    const assets = await getReleaseAssetsMap();
+    const binaryUrl = assets.get(osMeta.value.releaseAsset);
+    if (binaryUrl) {
+      const a = document.createElement('a');
+      a.href = binaryUrl;
+      a.download = osMeta.value.releaseAsset;
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      ElMessage.success(`Downloading ${osMeta.value.releaseAsset}`);
+      return;
+    }
+
+    const fileName = downloadDesktopEditionScript('electron', activeOs.value);
+    ElMessage.success(`Downloaded ${fileName}`);
+  } finally {
+    downloadingTarget.value = null;
+  }
+}
 </script>
 
 <template>
   <el-dialog
     :model-value="visible"
     title="Download / Install Api-Open App"
-    width="min(94vw, 600px)"
+    width="min(94vw, 540px)"
     align-center
     @update:model-value="emit('update:visible', $event)"
   >
@@ -291,53 +232,50 @@ const osMeta = computed(() => {
     </div>
 
     <div class="download-sections">
-      <!-- Quick Launcher for Selected OS -->
+      <!-- Primary Standalone Electron Desktop Card -->
       <div class="download-hero-card">
         <div class="download-hero-info">
-          <div class="download-app-card-title">
-            {{ osMeta.title }} Quick Launcher
+          <div class="edition-top">
+            <span class="download-app-card-title">
+              Api-Open Desktop ({{ osMeta.title }})
+            </span>
+            <el-tag size="small" type="primary" effect="light">
+              {{ osMeta.badge }}
+            </el-tag>
           </div>
           <div class="download-app-card-desc">
-            {{ osMeta.launcherHint }}
+            {{ osMeta.desktopDesc }}
           </div>
         </div>
         <el-button
           type="primary"
-          size="small"
+          size="default"
           :icon="Download"
-          :loading="downloadingEdition === 'launcher'"
-          @click="downloadLauncherFor(activeOs)"
+          :loading="downloadingTarget === 'desktop'"
+          style="width: 100%; margin-top: 8px"
+          @click="downloadElectronApp"
         >
-          {{ osMeta.launcherLabel }}
+          Download
         </el-button>
       </div>
 
-      <!-- Native / Desktop Editions for Selected OS -->
-      <div class="editions-header">
-        Available Desktop Builds for {{ osMeta.title }} (CORS-Free Local Agent)
-      </div>
-      <div class="editions-grid">
-        <div
-          v-for="ed in osMeta.editions"
-          :key="ed.id"
-          class="download-app-card edition-card"
-        >
-          <div class="edition-top">
-            <span class="download-app-card-title">{{ ed.name }}</span>
-            <el-tag size="small" effect="plain">{{ ed.badge }}</el-tag>
-          </div>
-          <div class="download-app-card-desc">{{ ed.desc }}</div>
+      <!-- Quick Launcher -->
+      <div class="download-app-card">
+        <div class="edition-top">
+          <span class="download-app-card-title">
+            {{ osMeta.title }} Quick Launcher
+          </span>
           <el-button
-            type="primary"
-            plain
             size="small"
             :icon="Download"
-            :loading="downloadingEdition === ed.id"
-            style="width: 100%; margin-top: 6px"
-            @click="downloadEdition(ed)"
+            :loading="downloadingTarget === 'launcher'"
+            @click="downloadLauncherFor(activeOs)"
           >
-            Download
+            {{ osMeta.launcherLabel }}
           </el-button>
+        </div>
+        <div class="download-app-card-desc" style="margin-top: 4px">
+          {{ osMeta.launcherHint }}
         </div>
       </div>
 
@@ -414,47 +352,24 @@ const osMeta = computed(() => {
   gap: 12px;
 }
 .download-hero-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--el-color-primary) 30%, var(--ao-border));
+  border: 1px solid color-mix(in srgb, var(--el-color-primary) 35%, var(--ao-border));
   background: color-mix(in srgb, var(--el-color-primary) 6%, var(--ao-surface-2));
 }
-.download-hero-info {
-  flex: 1;
-  min-width: 200px;
-}
-.editions-header {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ao-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-.editions-grid,
 .extras-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
-.edition-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
-}
 .edition-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 @media (max-width: 560px) {
-  .editions-grid,
   .extras-grid {
     grid-template-columns: 1fr;
   }

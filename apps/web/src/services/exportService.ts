@@ -145,30 +145,13 @@ export function downloadLinuxLauncherScript(appUrl = window.location.origin) {
 }
 
 export function downloadDesktopEditionScript(
-  edition: 'electron' | 'csharp' | 'cpp' | 'java',
+  _edition: 'electron',
   os: 'win' | 'mac' | 'linux',
   appUrl = window.location.origin,
 ): string {
   const repoUrl = 'https://github.com/Muunsz/Api-Open.git';
-  const editionLabel =
-    edition === 'electron'
-      ? 'Electron'
-      : edition === 'csharp'
-        ? 'CSharp'
-        : edition === 'cpp'
-          ? 'Cpp'
-          : 'Java';
 
   if (os === 'win') {
-    const runCmd =
-      edition === 'electron'
-        ? 'npm install && npm run start --workspace=@api-open/desktop'
-        : edition === 'csharp'
-          ? 'cd apps\\desktop-csharp && dotnet run'
-          : edition === 'cpp'
-            ? 'cd apps\\desktop-cpp && cmake -B build -A x64 && cmake --build build --config Release && .\\build\\Release\\ApiOpenDesktop.exe'
-            : 'cd apps\\desktop-java && mvn javafx:run';
-
     const script = [
       '@echo off',
       `set "API_OPEN_URL=${appUrl}"`,
@@ -176,18 +159,13 @@ export function downloadDesktopEditionScript(
       `  git clone ${repoUrl} Api-Open`,
       ')',
       'cd Api-Open',
-      runCmd,
+      'npm install && npm run start --workspace=@api-open/desktop',
       'pause',
     ].join('\r\n');
-    const fileName = `Api-Open-${editionLabel}-Windows.bat`;
+    const fileName = 'Api-Open-Electron-Windows.bat';
     downloadBlobFile(script, fileName, 'application/bat');
     return fileName;
   }
-
-  const runCmd =
-    edition === 'electron'
-      ? 'npm install && npm run start --workspace=@api-open/desktop'
-      : 'cd apps/desktop-java && mvn javafx:run';
 
   const script = [
     '#!/usr/bin/env bash',
@@ -196,12 +174,12 @@ export function downloadDesktopEditionScript(
     `  git clone "${repoUrl}" Api-Open`,
     'fi',
     'cd Api-Open || exit 1',
-    runCmd,
+    'npm install && npm run start --workspace=@api-open/desktop',
   ].join('\n');
 
   const ext = os === 'mac' ? 'command' : 'sh';
   const label = os === 'mac' ? 'macOS' : 'Linux';
-  const fileName = `Api-Open-${editionLabel}-${label}.${ext}`;
+  const fileName = `Api-Open-Electron-${label}.${ext}`;
   downloadBlobFile(
     script,
     fileName,
