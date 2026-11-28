@@ -50,7 +50,7 @@ async function initApp(): Promise<void> {
         }
       },
       methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Admin-Token'],
       credentials: true,
     });
 

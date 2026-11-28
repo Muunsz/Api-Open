@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
+import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CollectionModule } from './modules/collection/collection.module';
 import { EnvironmentModule } from './modules/environment/environment.module';
@@ -19,6 +20,7 @@ import { PrismaModule } from './prisma/prisma.module';
     PrismaModule,
     MailModule,
     AuthModule,
+    AdminModule,
     WorkspaceModule,
     CollectionModule,
     RequestModule,

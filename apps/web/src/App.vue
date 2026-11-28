@@ -5,6 +5,7 @@ import { FolderChecked, House, Key, Promotion } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { workspaceApi } from './api/workspace';
 import AuthDialogs from './components/AuthDialogs.vue';
+import AdminBackpanel from './components/AdminBackpanel.vue';
 import CollectionRunnerDialog from './components/CollectionRunnerDialog.vue';
 import ConsoleDrawer from './components/ConsoleDrawer.vue';
 import CookiesDialog from './components/CookiesDialog.vue';
@@ -178,6 +179,42 @@ const desktopUpdateProgress = ref<DesktopUpdateProgress | null>(null);
 let cleanupUpdateListener: (() => void) | null = null;
 let cleanupUpdateProgressListener: (() => void) | null = null;
 let cleanupDeepLinkListener: (() => void) | null = null;
+
+function checkIsBackpanelUrl(): boolean {
+  const path = window.location.pathname.replace(/\/+$/, '');
+  return (
+    path.endsWith('/backpanel') ||
+    window.location.hash.startsWith('#/backpanel')
+  );
+}
+
+const isBackpanelRoute = ref(checkIsBackpanelUrl());
+let endKeyPressCount = 0;
+let lastEndKeyPressAt = 0;
+
+function openBackpanel() {
+  isBackpanelRoute.value = true;
+  if (window.location.protocol === 'file:') {
+    window.location.hash = '#/backpanel';
+  } else if (!window.location.pathname.replace(/\/+$/, '').endsWith('/backpanel')) {
+    window.history.pushState({}, '', '/backpanel');
+  }
+}
+
+function exitBackpanel() {
+  isBackpanelRoute.value = false;
+  if (window.location.protocol === 'file:') {
+    if (window.location.hash.startsWith('#/backpanel')) {
+      window.location.hash = '';
+    }
+  } else if (window.location.pathname.replace(/\/+$/, '').endsWith('/backpanel')) {
+    window.history.pushState({}, '', '/');
+  }
+}
+
+function handleRouteChange() {
+  isBackpanelRoute.value = checkIsBackpanelUrl();
+}
 
 async function handleManualCheckUpdates() {
   const bridge = (window as unknown as { apiOpenDesktop?: DesktopBridge })
@@ -397,6 +434,26 @@ function handleGlobalKeydown(e: KeyboardEvent) {
     targetTag === 'TEXTAREA' ||
     (e.target as HTMLElement | null)?.isContentEditable;
 
+  // Hidden Admin Backpanel trigger: press End 5 times consecutively
+  if (!mod && !e.altKey && !e.shiftKey && e.key === 'End' && !isTyping) {
+    const now = Date.now();
+    if (now - lastEndKeyPressAt <= 2500) {
+      endKeyPressCount += 1;
+    } else {
+      endKeyPressCount = 1;
+    }
+    lastEndKeyPressAt = now;
+    if (endKeyPressCount >= 5) {
+      endKeyPressCount = 0;
+      e.preventDefault();
+      if (isBackpanelRoute.value) exitBackpanel();
+      else openBackpanel();
+      return;
+    }
+  } else if (e.key !== 'End') {
+    endKeyPressCount = 0;
+  }
+
   if (!mod && !e.altKey && e.key === '?' && !isTyping) {
     e.preventDefault();
     shortcutsDialogVisible.value = true;
@@ -552,6 +609,8 @@ onMounted(async () => {
   }
   ws.initAuth();
   window.addEventListener('keydown', handleGlobalKeydown);
+  window.addEventListener('popstate', handleRouteChange);
+  window.addEventListener('hashchange', handleRouteChange);
 
   const desktopBridge = (window as unknown as { apiOpenDesktop?: DesktopBridge })
     .apiOpenDesktop;
@@ -581,6 +640,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
+  window.removeEventListener('popstate', handleRouteChange);
+  window.removeEventListener('hashchange', handleRouteChange);
   cleanupUpdateListener?.();
   cleanupUpdateListener = null;
   cleanupUpdateProgressListener?.();
@@ -878,8 +939,9 @@ async function openEnvDialog(envId?: string) {
 </script>
 
 <template>
+  <AdminBackpanel v-if="isBackpanelRoute" @exit="exitBackpanel" />
   <div
-    v-if="publicDocsData"
+    v-else-if="publicDocsData"
     style="min-height: 100vh; padding: 32px; max-width: 960px; margin: 0 auto; background: var(--ao-bg); color: var(--ao-text)"
   >
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px">
