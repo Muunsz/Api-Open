@@ -197,14 +197,18 @@ async function handleQuickCreateEnv() {
         title="Download / Install Desktop App"
         @click="emit('open-download-app')"
       />
-      <el-tag
+      <el-tooltip
         v-else
-        size="small"
-        effect="plain"
-        title="Running Api-Open Desktop (Electron)"
+        :content="`Api-Open Desktop v${desktopAppVersion}`"
+        placement="bottom"
       >
-        v{{ desktopAppVersion }}
-      </el-tag>
+        <span
+          class="desktop-version-dot"
+          :aria-label="`Api-Open Desktop v${desktopAppVersion}`"
+        >
+          v
+        </span>
+      </el-tooltip>
     </div>
 
     <div class="top-actions">
@@ -585,7 +589,23 @@ async function handleQuickCreateEnv() {
   gap: 8px;
   flex: 1;
   min-width: 0;
-  max-width: 340px;
+  max-width: 400px;
+}
+.desktop-version-dot {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid var(--ao-border);
+  background: var(--ao-surface-elevated);
+  color: var(--el-color-primary);
+  font-size: 11.5px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  user-select: none;
 }
 .top-search-group > :deep(.el-button) {
   flex-shrink: 0;
