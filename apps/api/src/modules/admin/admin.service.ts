@@ -9,6 +9,8 @@ import { ConfigService } from '@nestjs/config';
 import { HttpMethod, WorkspaceType } from '@prisma/client';
 import * as crypto from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { renderPasswordResetEmail } from '../mail/email-templates';
+import { MailService } from '../mail/mail.service';
 
 export interface AdminTokenPayload {
   sub: string;
@@ -27,6 +29,7 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly mailService: MailService,
   ) {}
 
   private getSigningSecret(): string {
@@ -609,5 +612,168 @@ export class AdminService {
         },
       },
     });
+  }
+
+  async verifyUserEmail(userId: string) {
+    const supabaseUrl = this.config.get<string>('SUPABASE_URL')?.trim();
+    const serviceRoleKey = this.config
+      .get<string>('SUPABASE_SERVICE_ROLE_KEY')
+      ?.trim();
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new BadRequestException(
+        'SUPABASE_SERVICE_ROLE_KEY is required on API server',
+      );
+    }
+    const res = await fetch(`${supabaseUrl}/auth/v1/admin/users/${userId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({ email_confirm: true }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new BadRequestException(`Failed to verify user: ${text}`);
+    }
+    return { verified: true, userId };
+  }
+
+  async sendUserPasswordReset(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new BadRequestException('User not found');
+
+    const supabaseUrl = this.config.get<string>('SUPABASE_URL')?.trim();
+    const serviceRoleKey = this.config
+      .get<string>('SUPABASE_SERVICE_ROLE_KEY')
+      ?.trim();
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new BadRequestException(
+        'SUPABASE_SERVICE_ROLE_KEY is required on API server',
+      );
+    }
+    const redirectTo =
+      this.config.get<string>('CORS_ORIGIN')?.split(',')[0]?.trim() ||
+      'http://localhost:9999';
+
+    const res = await fetch(`${supabaseUrl}/auth/v1/admin/generate_link`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({
+        type: 'recovery',
+        email: user.email,
+        redirect_to: redirectTo,
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new BadRequestException(`Failed to generate reset link: ${text}`);
+    }
+    const payload = (await res.json()) as {
+      action_link?: string;
+      properties?: { action_link?: string };
+    };
+    const resetUrl =
+      payload.action_link || payload.properties?.action_link || redirectTo;
+    const rendered = renderPasswordResetEmail({
+      recipientEmail: user.email,
+      resetUrl,
+    });
+    const mailResult = await this.mailService.sendEmail({
+      to: user.email,
+      subject: rendered.subject,
+      text: rendered.text,
+      html: rendered.html,
+      category: 'auth_password_reset',
+      userId: user.id,
+    });
+    return { ok: mailResult.success, email: user.email };
+  }
+
+  async toggleWorkspaceType(id: string) {
+    const ws = await this.prisma.workspace.findUnique({ where: { id } });
+    if (!ws) throw new BadRequestException('Workspace not found');
+    const nextType =
+      ws.type === WorkspaceType.TEAM
+        ? WorkspaceType.PERSONAL
+        : WorkspaceType.TEAM;
+    return this.prisma.workspace.update({
+      where: { id },
+      data: { type: nextType },
+    });
+  }
+
+  async deleteCollection(id: string) {
+    await this.prisma.collection.delete({ where: { id } });
+    return { deleted: true, id };
+  }
+
+  async deleteRequest(id: string) {
+    await this.prisma.apiRequest.delete({ where: { id } });
+    return { deleted: true, id };
+  }
+
+  async purgeHistories(days = 30) {
+    const cutoff =
+      days <= 0 ? undefined : new Date(Date.now() - days * 86400 * 1000);
+    const res = await this.prisma.requestHistory.deleteMany({
+      where: cutoff ? { createdAt: { lt: cutoff } } : undefined,
+    });
+    return { deletedCount: res.count };
+  }
+
+  async purgeActivities(days = 30) {
+    const cutoff =
+      days <= 0 ? undefined : new Date(Date.now() - days * 86400 * 1000);
+    const res = await this.prisma.activityLog.deleteMany({
+      where: cutoff ? { createdAt: { lt: cutoff } } : undefined,
+    });
+    return { deletedCount: res.count };
+  }
+
+  async purgeEmails(days = 30) {
+    const cutoff =
+      days <= 0 ? undefined : new Date(Date.now() - days * 86400 * 1000);
+    const res = await this.prisma.emailLog.deleteMany({
+      where: cutoff ? { createdAt: { lt: cutoff } } : undefined,
+    });
+    return { deletedCount: res.count };
+  }
+
+  async sendTestEmail(to: string) {
+    const cleanTo = (to || '').trim();
+    if (!cleanTo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanTo)) {
+      throw new BadRequestException('Valid recipient email is required');
+    }
+    const result = await this.mailService.sendEmail({
+      to: cleanTo,
+      subject: 'Api-Open Backpanel — SMTP Test Email',
+      text: `This is a test email triggered from Api-Open Admin Backpanel at ${new Date().toISOString()}.`,
+      category: 'general',
+    });
+    if (!result.success) {
+      throw new BadRequestException(result.error || 'Failed to send test email');
+    }
+    return { ok: true, to: cleanTo };
+  }
+
+  async deleteMonitor(id: string) {
+    await this.prisma.monitor.delete({ where: { id } });
+    return { deleted: true, id };
+  }
+
+  async deleteEnvironment(id: string) {
+    await this.prisma.environment.delete({ where: { id } });
+    return { deleted: true, id };
+  }
+
+  async deleteSnapshot(id: string) {
+    await this.prisma.collectionSnapshot.delete({ where: { id } });
+    return { deleted: true, id };
   }
 }

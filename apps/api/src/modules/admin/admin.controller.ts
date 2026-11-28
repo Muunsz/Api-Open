@@ -167,4 +167,76 @@ export class AdminController {
   snapshots(@Query('q') q?: string, @Query('limit') limit?: string) {
     return this.adminService.listSnapshots(q, limit ? Number(limit) : 100);
   }
+
+  @UseGuards(AdminAuthGuard)
+  @Post('users/:id/verify-email')
+  verifyUserEmail(@Param('id') id: string) {
+    return this.adminService.verifyUserEmail(id);
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Post('users/:id/reset-password')
+  sendUserPasswordReset(@Param('id') id: string) {
+    return this.adminService.sendUserPasswordReset(id);
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Patch('workspaces/:id/toggle-type')
+  toggleWorkspaceType(@Param('id') id: string) {
+    return this.adminService.toggleWorkspaceType(id);
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Delete('collections/:id')
+  deleteCollection(@Param('id') id: string) {
+    return this.adminService.deleteCollection(id);
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Delete('requests/:id')
+  deleteRequest(@Param('id') id: string) {
+    return this.adminService.deleteRequest(id);
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Delete('histories/purge')
+  purgeHistories(@Query('days') days?: string) {
+    return this.adminService.purgeHistories(days !== undefined ? Number(days) : 30);
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Delete('activities/purge')
+  purgeActivities(@Query('days') days?: string) {
+    return this.adminService.purgeActivities(days !== undefined ? Number(days) : 30);
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Delete('emails/purge')
+  purgeEmails(@Query('days') days?: string) {
+    return this.adminService.purgeEmails(days !== undefined ? Number(days) : 30);
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Post('emails/test')
+  sendTestEmail(@Body() body: { to?: string }) {
+    return this.adminService.sendTestEmail(body.to || '');
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Delete('monitors/:id')
+  deleteMonitor(@Param('id') id: string) {
+    return this.adminService.deleteMonitor(id);
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Delete('environments/:id')
+  deleteEnvironment(@Param('id') id: string) {
+    return this.adminService.deleteEnvironment(id);
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Delete('snapshots/:id')
+  deleteSnapshot(@Param('id') id: string) {
+    return this.adminService.deleteSnapshot(id);
+  }
 }

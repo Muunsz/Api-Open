@@ -250,6 +250,141 @@ async function handleDeleteComment(id: string) {
   }
 }
 
+const testEmailTarget = ref('');
+const sendingTestEmail = ref(false);
+
+async function handleVerifyUser(id: string, email: string) {
+  try {
+    await adminService.verifyUserEmail(id);
+    ElMessage.success(`Verified ${email}`);
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : 'Verify failed');
+  }
+}
+
+async function handleSendUserReset(id: string, email: string) {
+  try {
+    await adminService.sendUserPasswordReset(id);
+    ElMessage.success(`Password reset email sent to ${email}`);
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : 'Failed to send reset email');
+  }
+}
+
+async function handleToggleWorkspaceType(id: string) {
+  try {
+    await adminService.toggleWorkspaceType(id);
+    ElMessage.success('Workspace type updated');
+    await loadCurrentTab();
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : 'Update failed');
+  }
+}
+
+async function handleDeleteCollection(id: string, name: string) {
+  try {
+    await ElMessageBox.confirm(`Delete collection "${name}"?`, 'Delete Collection', {
+      type: 'error',
+      confirmButtonText: 'Delete',
+    });
+    await adminService.deleteCollection(id);
+    ElMessage.success(`Deleted collection ${name}`);
+    await loadCurrentTab();
+  } catch {
+    // canceled
+  }
+}
+
+async function handleDeleteRequest(id: string, name: string) {
+  try {
+    await ElMessageBox.confirm(`Delete request "${name}"?`, 'Delete Request', {
+      type: 'error',
+      confirmButtonText: 'Delete',
+    });
+    await adminService.deleteRequest(id);
+    ElMessage.success(`Deleted request ${name}`);
+    await loadCurrentTab();
+  } catch {
+    // canceled
+  }
+}
+
+async function handlePurge(kind: 'histories' | 'activities' | 'emails', days: number) {
+  try {
+    await ElMessageBox.confirm(
+      days <= 0 ? `Clear ALL ${kind} logs?` : `Delete ${kind} logs older than ${days} days?`,
+      'Purge Logs',
+      { type: 'warning', confirmButtonText: 'Purge' },
+    );
+    const res =
+      kind === 'histories'
+        ? await adminService.purgeHistories(days)
+        : kind === 'activities'
+          ? await adminService.purgeActivities(days)
+          : await adminService.purgeEmails(days);
+    ElMessage.success(`Removed ${res.deletedCount} record(s)`);
+    await loadCurrentTab();
+  } catch {
+    // canceled
+  }
+}
+
+async function handleSendTestEmail() {
+  if (!testEmailTarget.value.trim()) {
+    ElMessage.warning('Enter a recipient email address');
+    return;
+  }
+  sendingTestEmail.value = true;
+  try {
+    await adminService.sendTestEmail(testEmailTarget.value.trim());
+    ElMessage.success(`Test email sent to ${testEmailTarget.value.trim()}`);
+    testEmailTarget.value = '';
+    await loadCurrentTab();
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : 'Test email failed');
+  } finally {
+    sendingTestEmail.value = false;
+  }
+}
+
+async function handleDeleteMonitor(id: string, name: string) {
+  try {
+    await ElMessageBox.confirm(`Delete monitor "${name}"?`, 'Delete Monitor', {
+      type: 'error',
+      confirmButtonText: 'Delete',
+    });
+    await adminService.deleteMonitor(id);
+    ElMessage.success(`Deleted monitor ${name}`);
+    await loadCurrentTab();
+  } catch {
+    // canceled
+  }
+}
+
+async function handleDeleteEnvironment(id: string, name: string) {
+  try {
+    await ElMessageBox.confirm(`Delete environment "${name}"?`, 'Delete Environment', {
+      type: 'error',
+      confirmButtonText: 'Delete',
+    });
+    await adminService.deleteEnvironment(id);
+    ElMessage.success(`Deleted environment ${name}`);
+    await loadCurrentTab();
+  } catch {
+    // canceled
+  }
+}
+
+async function handleDeleteSnapshot(id: string) {
+  try {
+    await adminService.deleteSnapshot(id);
+    ElMessage.success('Snapshot deleted');
+    await loadCurrentTab();
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : 'Delete failed');
+  }
+}
+
 function inspectSnapshot(snap: unknown) {
   inspectedSnapshotJson.value = JSON.stringify(snap, null, 2);
   snapshotModalVisible.value = true;
@@ -340,60 +475,113 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Authenticated Backpanel -->
-    <div v-else class="bp-workspace">
-      <header class="bp-topbar">
-        <div class="bp-brand">
-          <span class="bp-brand-dot" />
-          <strong>Api-Open Backpanel</strong>
-          <el-tag size="small" effect="plain" type="success">{{ adminEmail }}</el-tag>
+    <!-- Authenticated Backpanel (Sidebar Layout) -->
+    <div v-else class="bp-layout">
+      <aside class="bp-sidebar">
+        <div class="bp-sidebar-header">
+          <div class="bp-brand">
+            <span class="bp-brand-dot" />
+            <div>
+              <div class="bp-brand-title">Api-Open</div>
+              <div class="bp-brand-sub">Admin Backpanel</div>
+            </div>
+          </div>
+          <div class="bp-admin-chip" :title="adminEmail">
+            {{ adminEmail }}
+          </div>
         </div>
 
-        <div class="bp-topbar-actions">
+        <nav class="bp-sidebar-nav">
+          <div class="bp-nav-group-label">Monitoring</div>
+          <button
+            v-for="t in [
+              { id: 'overview', label: 'Overview & Health', icon: '◉' },
+              { id: 'histories', label: 'Traffic & History', icon: '⇄' },
+              { id: 'activities', label: 'Activity Logs', icon: '⚡' },
+              { id: 'emails', label: 'Email Logs', icon: '✉' },
+            ]"
+            :key="t.id"
+            type="button"
+            class="bp-nav-item"
+            :class="{ active: activeTab === t.id }"
+            @click="switchTab(t.id as BackpanelTab)"
+          >
+            <span class="bp-nav-icon">{{ t.icon }}</span>
+            <span>{{ t.label }}</span>
+          </button>
+
+          <div class="bp-nav-group-label" style="margin-top: 14px">Management</div>
+          <button
+            v-for="t in [
+              { id: 'users', label: 'Users', icon: '👤' },
+              { id: 'workspaces', label: 'Workspaces', icon: '▣' },
+              { id: 'collections', label: 'Collections & APIs', icon: '▤' },
+              { id: 'monitors', label: 'Monitors & Envs', icon: '◷' },
+              { id: 'comments', label: 'Comments & Snapshots', icon: '✎' },
+            ]"
+            :key="t.id"
+            type="button"
+            class="bp-nav-item"
+            :class="{ active: activeTab === t.id }"
+            @click="switchTab(t.id as BackpanelTab)"
+          >
+            <span class="bp-nav-icon">{{ t.icon }}</span>
+            <span>{{ t.label }}</span>
+          </button>
+        </nav>
+
+        <div class="bp-sidebar-footer">
           <el-select
             v-model="autoRefreshSec"
             size="small"
-            style="width: 120px"
+            style="width: 100%"
             title="Auto Refresh"
           >
-            <el-option :value="0" label="Auto: Off" />
-            <el-option :value="10" label="Auto: 10s" />
-            <el-option :value="30" label="Auto: 30s" />
+            <el-option :value="0" label="Auto Refresh: Off" />
+            <el-option :value="10" label="Auto Refresh: 10s" />
+            <el-option :value="30" label="Auto Refresh: 30s" />
           </el-select>
-          <el-button size="small" :loading="loadingTab" @click="loadCurrentTab">
-            Refresh
-          </el-button>
-          <el-button size="small" @click="emit('exit')">Back to App</el-button>
-          <el-button size="small" type="danger" plain @click="handleAdminLogout">
-            Sign Out
-          </el-button>
+          <div style="display: flex; gap: 6px; width: 100%">
+            <el-button size="small" style="flex: 1" @click="emit('exit')">
+              Back to App
+            </el-button>
+            <el-button
+              size="small"
+              type="danger"
+              plain
+              style="flex: 1"
+              @click="handleAdminLogout"
+            >
+              Sign Out
+            </el-button>
+          </div>
         </div>
-      </header>
-
-      <nav class="bp-tabs">
-        <button
-          v-for="t in [
-            { id: 'overview', label: 'Overview & Health' },
-            { id: 'users', label: 'Users' },
-            { id: 'workspaces', label: 'Workspaces' },
-            { id: 'collections', label: 'Collections & Requests' },
-            { id: 'histories', label: 'Traffic & History' },
-            { id: 'activities', label: 'Activity Logs' },
-            { id: 'emails', label: 'Email Logs' },
-            { id: 'monitors', label: 'Monitors & Envs' },
-            { id: 'comments', label: 'Comments & Snapshots' },
-          ]"
-          :key="t.id"
-          type="button"
-          class="bp-tab-btn"
-          :class="{ active: activeTab === t.id }"
-          @click="switchTab(t.id as BackpanelTab)"
-        >
-          {{ t.label }}
-        </button>
-      </nav>
+      </aside>
 
       <main class="bp-content">
+        <div class="bp-page-head">
+          <div>
+            <h2 class="bp-page-title">
+              {{
+                {
+                  overview: 'Overview & System Health',
+                  users: 'User Accounts',
+                  workspaces: 'Workspaces & Members',
+                  collections: 'Collections & API Requests',
+                  histories: 'Traffic & Request History',
+                  activities: 'Activity Logs',
+                  emails: 'Email Delivery Logs',
+                  monitors: 'Monitors & Environments',
+                  comments: 'Comments & Snapshots',
+                }[activeTab]
+              }}
+            </h2>
+            <div class="bp-page-sub">Live database &amp; telemetry console</div>
+          </div>
+          <el-button size="small" type="primary" plain :loading="loadingTab" @click="loadCurrentTab">
+            Refresh Data
+          </el-button>
+        </div>
         <!-- OVERVIEW -->
         <template v-if="activeTab === 'overview' && overview">
           <div class="bp-kpi-grid">
@@ -550,8 +738,24 @@ onUnmounted(() => {
             <el-table-column label="Created" width="170">
               <template #default="{ row }">{{ fmtDate(row.createdAt) }}</template>
             </el-table-column>
-            <el-table-column label="Actions" width="100">
+            <el-table-column label="Actions" width="210">
               <template #default="{ row }">
+                <el-button
+                  size="small"
+                  type="success"
+                  link
+                  @click="handleVerifyUser(row.id, row.email)"
+                >
+                  Verify
+                </el-button>
+                <el-button
+                  size="small"
+                  type="primary"
+                  link
+                  @click="handleSendUserReset(row.id, row.email)"
+                >
+                  Reset PW
+                </el-button>
                 <el-button
                   size="small"
                   type="danger"
@@ -599,8 +803,16 @@ onUnmounted(() => {
             <el-table-column label="Updated" width="170">
               <template #default="{ row }">{{ fmtDate(row.updatedAt) }}</template>
             </el-table-column>
-            <el-table-column label="Actions" width="90">
+            <el-table-column label="Actions" width="165">
               <template #default="{ row }">
+                <el-button
+                  size="small"
+                  type="primary"
+                  link
+                  @click="handleToggleWorkspaceType(row.id)"
+                >
+                  Switch Type
+                </el-button>
                 <el-button
                   size="small"
                   type="danger"
@@ -654,6 +866,13 @@ onUnmounted(() => {
             <el-table-column label="Updated" width="170">
               <template #default="{ row }">{{ fmtDate(row.updatedAt) }}</template>
             </el-table-column>
+            <el-table-column label="Actions" width="90">
+              <template #default="{ row }">
+                <el-button size="small" type="danger" link @click="handleDeleteCollection(row.id, row.name)">
+                  Delete
+                </el-button>
+              </template>
+            </el-table-column>
           </el-table>
           <el-table v-else :data="requests" size="small" v-loading="loadingTab">
             <el-table-column prop="method" label="Method" width="90" />
@@ -664,6 +883,13 @@ onUnmounted(() => {
             </el-table-column>
             <el-table-column label="Comments" width="90">
               <template #default="{ row }">{{ row._count.comments }}</template>
+            </el-table-column>
+            <el-table-column label="Actions" width="90">
+              <template #default="{ row }">
+                <el-button size="small" type="danger" link @click="handleDeleteRequest(row.id, row.name)">
+                  Delete
+                </el-button>
+              </template>
             </el-table-column>
           </el-table>
         </template>
@@ -691,6 +917,8 @@ onUnmounted(() => {
               <el-option value="error" label="Errors" />
             </el-select>
             <el-button size="small" type="primary" @click="loadCurrentTab">Filter</el-button>
+            <el-button size="small" type="warning" plain @click="handlePurge('histories', 30)">Purge &gt;30d</el-button>
+            <el-button size="small" type="danger" plain @click="handlePurge('histories', 0)">Clear All</el-button>
           </div>
           <el-table :data="histories" size="small" v-loading="loadingTab">
             <el-table-column prop="method" label="Method" width="85" />
@@ -733,6 +961,8 @@ onUnmounted(() => {
               @keyup.enter="loadCurrentTab"
             />
             <el-button size="small" type="primary" @click="loadCurrentTab">Filter</el-button>
+            <el-button size="small" type="warning" plain @click="handlePurge('activities', 30)">Purge &gt;30d</el-button>
+            <el-button size="small" type="danger" plain @click="handlePurge('activities', 0)">Clear All</el-button>
           </div>
           <el-table :data="activities" size="small" v-loading="loadingTab">
             <el-table-column prop="type" label="Type" width="100" />
@@ -771,6 +1001,16 @@ onUnmounted(() => {
               <el-option value="failed" label="failed" />
             </el-select>
             <el-button size="small" type="primary" @click="loadCurrentTab">Filter</el-button>
+            <el-input
+              v-model="testEmailTarget"
+              size="small"
+              placeholder="Test SMTP email..."
+              style="max-width: 190px; margin-left: auto"
+            />
+            <el-button size="small" type="success" plain :loading="sendingTestEmail" @click="handleSendTestEmail">
+              Send Test
+            </el-button>
+            <el-button size="small" type="warning" plain @click="handlePurge('emails', 30)">Purge &gt;30d</el-button>
           </div>
           <el-table :data="emails" size="small" v-loading="loadingTab">
             <el-table-column prop="to" label="To" min-width="170" />
@@ -821,6 +1061,13 @@ onUnmounted(() => {
                 <el-switch :model-value="row.enabled" @change="handleToggleMonitor(row.id)" />
               </template>
             </el-table-column>
+            <el-table-column label="Actions" width="90">
+              <template #default="{ row }">
+                <el-button size="small" type="danger" link @click="handleDeleteMonitor(row.id, row.name)">
+                  Delete
+                </el-button>
+              </template>
+            </el-table-column>
           </el-table>
           <el-table v-else :data="environments" size="small" v-loading="loadingTab">
             <el-table-column prop="name" label="Environment" min-width="160" />
@@ -837,6 +1084,13 @@ onUnmounted(() => {
                     .map((v: any) => `${v.key}=${v.isSecret && !revealEnvSecrets ? '***' : v.value}`)
                     .join(', ')
                 }}
+              </template>
+            </el-table-column>
+            <el-table-column label="Actions" width="90">
+              <template #default="{ row }">
+                <el-button size="small" type="danger" link @click="handleDeleteEnvironment(row.id, row.name)">
+                  Delete
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -889,6 +1143,13 @@ onUnmounted(() => {
             <el-table-column prop="note" label="Note" min-width="200" show-overflow-tooltip />
             <el-table-column label="Created" width="170">
               <template #default="{ row }">{{ fmtDate(row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column label="Actions" width="90">
+              <template #default="{ row }">
+                <el-button size="small" type="danger" link @click="handleDeleteSnapshot(row.id)">
+                  Delete
+                </el-button>
+              </template>
             </el-table-column>
           </el-table>
         </template>
@@ -947,27 +1208,31 @@ onUnmounted(() => {
   font-size: 13px;
   color: var(--ao-text-muted);
 }
-.bp-workspace {
+.bp-layout {
   display: flex;
-  flex-direction: column;
   min-height: 100vh;
 }
-.bp-topbar {
+.bp-sidebar {
+  width: 248px;
+  flex-shrink: 0;
+  background: var(--ao-surface);
+  border-right: 1px solid var(--ao-border);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 24px;
-  background: linear-gradient(90deg, var(--ao-surface) 0%, rgba(37, 99, 235, 0.06) 100%);
+  flex-direction: column;
+  padding: 16px 12px;
+  gap: 16px;
+}
+.bp-sidebar-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 6px 12px;
   border-bottom: 1px solid var(--ao-border);
-  flex-wrap: wrap;
 }
 .bp-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 15px;
-  letter-spacing: 0.2px;
 }
 .bp-brand-dot {
   width: 10px;
@@ -975,51 +1240,118 @@ onUnmounted(() => {
   border-radius: 50%;
   background: #10b981;
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.8);
+  flex-shrink: 0;
 }
-.bp-topbar-actions {
+.bp-brand-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.bp-brand-sub {
+  font-size: 11px;
+  color: var(--ao-text-muted);
+}
+.bp-admin-chip {
+  font-size: 11.5px;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 6px;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bp-sidebar-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-y: auto;
+}
+.bp-nav-group-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ao-text-muted);
+  padding: 0 8px 4px;
+}
+.bp-nav-item {
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.bp-tabs {
-  display: flex;
-  gap: 6px;
-  padding: 10px 24px;
-  background: var(--ao-surface-2, var(--ao-surface));
-  border-bottom: 1px solid var(--ao-border);
-  overflow-x: auto;
-}
-.bp-tab-btn {
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--ao-text-muted);
-  padding: 7px 13px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
   cursor: pointer;
-  white-space: nowrap;
   transition: all 0.15s ease;
 }
-.bp-tab-btn:hover {
+.bp-nav-item:hover {
   color: var(--ao-text);
   background: var(--ao-hover);
 }
-.bp-tab-btn.active {
+.bp-nav-item.active {
   color: var(--el-color-primary);
+  font-weight: 600;
   background: rgba(59, 130, 246, 0.12);
-  border-color: rgba(59, 130, 246, 0.35);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+.bp-nav-icon {
+  width: 18px;
+  text-align: center;
+  font-size: 13px;
+  opacity: 0.9;
+}
+.bp-sidebar-footer {
+  padding-top: 12px;
+  border-top: 1px solid var(--ao-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .bp-content {
   flex: 1;
-  padding: 20px 24px;
-  max-width: 1480px;
-  width: 100%;
-  margin: 0 auto;
+  min-width: 0;
+  padding: 22px 26px;
   display: flex;
   flex-direction: column;
   gap: 18px;
+  overflow-y: auto;
+}
+.bp-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ao-border);
+}
+.bp-page-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+}
+.bp-page-sub {
+  font-size: 12px;
+  color: var(--ao-text-muted);
+  margin-top: 2px;
+}
+@media (max-width: 820px) {
+  .bp-layout {
+    flex-direction: column;
+  }
+  .bp-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--ao-border);
+  }
 }
 .bp-kpi-grid {
   display: grid;

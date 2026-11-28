@@ -29,7 +29,7 @@ async function adminFetch<T>(
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { 'X-Admin-Token': token } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers ?? {}),
     },
   });
@@ -342,4 +342,68 @@ export const adminService = {
         };
       }>
     >(`/admin/snapshots?q=${encodeURIComponent(q)}`),
+
+  verifyUserEmail: (id: string) =>
+    adminFetch<{ verified: boolean; userId: string }>(
+      `/admin/users/${id}/verify-email`,
+      { method: 'POST' },
+    ),
+
+  sendUserPasswordReset: (id: string) =>
+    adminFetch<{ ok: boolean; email: string }>(
+      `/admin/users/${id}/reset-password`,
+      { method: 'POST' },
+    ),
+
+  toggleWorkspaceType: (id: string) =>
+    adminFetch<{ id: string; type: string }>(
+      `/admin/workspaces/${id}/toggle-type`,
+      { method: 'PATCH' },
+    ),
+
+  deleteCollection: (id: string) =>
+    adminFetch<{ deleted: boolean; id: string }>(`/admin/collections/${id}`, {
+      method: 'DELETE',
+    }),
+
+  deleteRequest: (id: string) =>
+    adminFetch<{ deleted: boolean; id: string }>(`/admin/requests/${id}`, {
+      method: 'DELETE',
+    }),
+
+  purgeHistories: (days = 30) =>
+    adminFetch<{ deletedCount: number }>(`/admin/histories/purge?days=${days}`, {
+      method: 'DELETE',
+    }),
+
+  purgeActivities: (days = 30) =>
+    adminFetch<{ deletedCount: number }>(`/admin/activities/purge?days=${days}`, {
+      method: 'DELETE',
+    }),
+
+  purgeEmails: (days = 30) =>
+    adminFetch<{ deletedCount: number }>(`/admin/emails/purge?days=${days}`, {
+      method: 'DELETE',
+    }),
+
+  sendTestEmail: (to: string) =>
+    adminFetch<{ ok: boolean; to: string }>('/admin/emails/test', {
+      method: 'POST',
+      body: JSON.stringify({ to }),
+    }),
+
+  deleteMonitor: (id: string) =>
+    adminFetch<{ deleted: boolean; id: string }>(`/admin/monitors/${id}`, {
+      method: 'DELETE',
+    }),
+
+  deleteEnvironment: (id: string) =>
+    adminFetch<{ deleted: boolean; id: string }>(`/admin/environments/${id}`, {
+      method: 'DELETE',
+    }),
+
+  deleteSnapshot: (id: string) =>
+    adminFetch<{ deleted: boolean; id: string }>(`/admin/snapshots/${id}`, {
+      method: 'DELETE',
+    }),
 };
