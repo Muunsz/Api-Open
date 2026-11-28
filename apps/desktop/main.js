@@ -471,6 +471,59 @@ function createWindow() {
 
   win.on('close', () => saveWindowState(win));
 
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const mod = input.control || input.meta;
+    const key = (input.key || '').toLowerCase();
+
+    // Reload / Hard Reload (matching browser behavior)
+    if (
+      (key === 'f5' && !input.alt) ||
+      (mod && !input.alt && key === 'r')
+    ) {
+      event.preventDefault();
+      if (input.shift || (key === 'f5' && mod)) {
+        win.webContents.reloadIgnoringCache();
+      } else {
+        win.webContents.reload();
+      }
+      return;
+    }
+
+    // Zoom In / Out / Reset
+    if (mod && !input.alt && (key === '=' || key === '+')) {
+      event.preventDefault();
+      const next = Math.min(2.5, win.webContents.getZoomFactor() + 0.1);
+      win.webContents.setZoomFactor(next);
+      return;
+    }
+    if (mod && !input.alt && key === '-') {
+      event.preventDefault();
+      const next = Math.max(0.5, win.webContents.getZoomFactor() - 0.1);
+      win.webContents.setZoomFactor(next);
+      return;
+    }
+    if (mod && !input.alt && key === '0') {
+      event.preventDefault();
+      win.webContents.setZoomFactor(1);
+      return;
+    }
+
+    // Fullscreen & DevTools
+    if (key === 'f11' && !mod && !input.alt) {
+      event.preventDefault();
+      win.setFullScreen(!win.isFullScreen());
+      return;
+    }
+    if (
+      (key === 'f12' && !mod && !input.alt) ||
+      (mod && input.shift && !input.alt && key === 'i')
+    ) {
+      event.preventDefault();
+      win.webContents.toggleDevTools();
+    }
+  });
+
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http://') || url.startsWith('https://')) {
       shell.openExternal(url);
