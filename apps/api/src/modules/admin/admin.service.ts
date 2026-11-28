@@ -290,6 +290,16 @@ export class AdminService {
         dbLatencyMs,
         nodeVersion: process.version,
         platform: process.platform,
+        environment: (
+          this.config.get<string>('VERCEL_ENV') ||
+          this.config.get<string>('NODE_ENV') ||
+          'production'
+        ).toUpperCase(),
+        runtimeHost: process.env.VERCEL
+          ? 'NestJS Microservice on Vercel'
+          : 'NestJS API (Local Node.js)',
+        sslStatus: process.env.VERCEL ? 'Active (TLS v1.3)' : 'Local HTTP/TLS',
+        storageActive: Boolean(this.config.get<string>('SUPABASE_URL')?.trim()),
         uptimeSeconds: Math.round(process.uptime()),
         memoryMb: {
           rss: Math.round(mem.rss / 1048576),

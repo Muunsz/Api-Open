@@ -81,6 +81,10 @@ export interface AdminOverviewDto {
     dbLatencyMs: number;
     nodeVersion: string;
     platform: string;
+    environment?: string;
+    runtimeHost?: string;
+    sslStatus?: string;
+    storageActive?: boolean;
     uptimeSeconds: number;
     memoryMb: { rss: number; heapUsed: number; heapTotal: number };
     integrations: {

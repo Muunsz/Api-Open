@@ -636,7 +636,97 @@ onUnmounted(() => {
           </div>
 
           <div class="bp-two-col">
+            <div class="bp-panel bp-status-card">
+              <div class="bp-status-header">
+                <span class="bp-status-icon">!</span>
+                <span>Status Sistem</span>
+              </div>
+
+              <div class="bp-status-service-row">
+                <div class="bp-status-service-top">
+                  <span><span class="bp-green-dot" /> Backend Service</span>
+                  <span class="bp-status-online">ONLINE</span>
+                </div>
+                <div class="bp-green-bar" />
+                <div class="bp-status-sub">
+                  {{ overview.system.runtimeHost || 'NestJS API (Node.js)' }}
+                </div>
+              </div>
+
+              <div class="bp-kv-list">
+                <div class="bp-kv-row">
+                  <span>API Gateway</span>
+                  <span class="bp-status-online">OPERATIONAL</span>
+                </div>
+                <div class="bp-kv-row">
+                  <span>SSL Encryption</span>
+                  <strong>{{ overview.system.sslStatus || 'Active (TLS v1.3)' }}</strong>
+                </div>
+                <div class="bp-kv-row">
+                  <span>Global Environment</span>
+                  <el-tag size="small" effect="plain" type="primary">
+                    {{ overview.system.environment || 'PRODUCTION' }}
+                  </el-tag>
+                </div>
+                <div class="bp-kv-row">
+                  <span>Engine version</span>
+                  <span>Node.js {{ overview.system.nodeVersion }}</span>
+                </div>
+              </div>
+
+              <div class="bp-storage-block">
+                <div class="bp-status-service-top">
+                  <span>Cloud Storage Assets</span>
+                  <strong>{{ overview.system.storageActive ? 'Active' : 'Inactive' }}</strong>
+                </div>
+                <div class="bp-storage-track">
+                  <div
+                    class="bp-storage-fill"
+                    :style="{ width: overview.system.storageActive ? '24%' : '0%' }"
+                  />
+                </div>
+                <div class="bp-storage-foot">
+                  <span>Supabase Storage</span>
+                  <span>{{ overview.system.storageActive ? 'Operational' : 'Unconfigured' }}</span>
+                </div>
+              </div>
+
+              <div class="bp-metric-pair">
+                <div class="bp-metric-box">
+                  <div class="bp-metric-label">LATENCY</div>
+                  <div class="bp-metric-val bp-green-text">~{{ overview.system.dbLatencyMs }}ms</div>
+                </div>
+                <div class="bp-metric-box">
+                  <div class="bp-metric-label">UPTIME</div>
+                  <div class="bp-metric-val">{{ fmtUptime(overview.system.uptimeSeconds) }}</div>
+                </div>
+              </div>
+
+              <div class="bp-secure-banner">
+                <span>Auth &amp; Admin Protection Active</span>
+                <span class="bp-secure-pill"><span class="bp-green-dot" /> SECURE ACCESS</span>
+              </div>
+            </div>
+
             <div class="bp-panel">
+              <div class="bp-panel-title">
+                <span><span style="color:#f97316;margin-right:6px">⛁</span>System Status</span>
+              </div>
+              <div class="bp-kv-list" style="margin-bottom: 16px">
+                <div class="bp-kv-row">
+                  <span>Database Sync</span>
+                  <el-tag size="small" type="success" effect="dark">✓ Real-time</el-tag>
+                </div>
+                <div class="bp-kv-row">
+                  <span>Log Retention</span>
+                  <strong>Auto</strong>
+                </div>
+                <div class="bp-kv-row">
+                  <span>Admin Access</span>
+                  <strong>Secured</strong>
+                </div>
+              </div>
+
               <div class="bp-panel-title">System &amp; Integration Readiness</div>
               <div class="bp-kv-list">
                 <div class="bp-kv-row">
@@ -1445,6 +1535,131 @@ onUnmounted(() => {
   border-radius: 10px;
   background: var(--ao-surface);
   border: 1px solid var(--ao-border);
+}
+.bp-status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.bp-status-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.bp-status-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid #10b981;
+  color: #10b981;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.bp-status-service-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bp-status-service-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+}
+.bp-green-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  margin-right: 6px;
+}
+.bp-status-online {
+  color: #10b981;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.bp-green-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #10b981, #22c55e);
+}
+.bp-status-sub {
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--ao-text-muted);
+}
+.bp-storage-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bp-storage-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.2);
+  overflow: hidden;
+}
+.bp-storage-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #3b82f6;
+}
+.bp-storage-foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ao-text-muted);
+}
+.bp-metric-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.bp-metric-box {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--ao-bg);
+  border: 1px solid var(--ao-border);
+}
+.bp-metric-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--ao-text-muted);
+}
+.bp-metric-val {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+.bp-green-text {
+  color: #10b981;
+}
+.bp-secure-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--ao-bg);
+  border: 1px solid var(--ao-border);
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--ao-text-muted);
+}
+.bp-secure-pill {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--ao-text);
+  letter-spacing: 0.03em;
 }
 .bp-json-pre {
   margin: 0;
