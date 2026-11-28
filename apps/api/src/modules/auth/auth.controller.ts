@@ -1,7 +1,16 @@
-import { BadRequestException, Body, Controller, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { renderPasswordResetEmail } from '../mail/email-templates';
 import { MailService } from '../mail/mail.service';
+import { CurrentUser } from './current-user.decorator';
+import { type AuthUser, SupabaseAuthGuard } from './supabase-auth.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -133,5 +142,37 @@ export class AuthController {
       mode: 'client_fallback',
       email,
     };
+  }
+
+  @UseGuards(SupabaseAuthGuard)
+  @Delete('account')
+  async deleteAccount(@CurrentUser() user: AuthUser) {
+    const supabaseUrl = this.config.get<string>('SUPABASE_URL')?.trim();
+    const serviceRoleKey = this.config
+      .get<string>('SUPABASE_SERVICE_ROLE_KEY')
+      ?.trim();
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new BadRequestException(
+        'Account deletion requires SUPABASE_SERVICE_ROLE_KEY on the server',
+      );
+    }
+
+    const res = await fetch(`${supabaseUrl}/auth/v1/admin/users/${user.id}`, {
+      method: 'DELETE',
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new BadRequestException(
+        `Failed to delete account: ${errText || res.status}`,
+      );
+    }
+
+    return { ok: true, deletedUserId: user.id };
   }
 }

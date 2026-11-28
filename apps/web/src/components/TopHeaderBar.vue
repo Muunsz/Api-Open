@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import {
   ArrowDown,
   Bell,
@@ -43,6 +43,24 @@ const settings = useSettingsStore();
 const consoleStore = useConsoleStore();
 
 const quickNewWorkspaceName = ref('');
+const desktopBridge = (
+  window as unknown as {
+    apiOpenDesktop?: {
+      isDesktop?: boolean;
+      getAppVersion?: () => Promise<string>;
+    };
+  }
+).apiOpenDesktop;
+const isDesktopApp = Boolean(desktopBridge?.isDesktop);
+const desktopAppVersion = ref('1.2.0');
+
+onMounted(() => {
+  if (isDesktopApp && desktopBridge?.getAppVersion) {
+    desktopBridge.getAppVersion().then((v) => {
+      if (v) desktopAppVersion.value = v;
+    }).catch(() => {});
+  }
+});
 const quickNewEnvName = ref('');
 const notifTab = ref<NotificationTab>('all');
 
@@ -172,12 +190,21 @@ async function handleQuickCreateEnv() {
         <kbd class="kbd-key">Ctrl+K</kbd>
       </button>
       <el-button
+        v-if="!isDesktopApp"
         size="small"
         circle
         :icon="Download"
         title="Download / Install Desktop App"
         @click="emit('open-download-app')"
       />
+      <el-tag
+        v-else
+        size="small"
+        effect="plain"
+        title="Running Api-Open Desktop (Electron)"
+      >
+        v{{ desktopAppVersion }}
+      </el-tag>
     </div>
 
     <div class="top-actions">

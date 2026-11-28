@@ -116,6 +116,8 @@ function handleNodeCollapse(data: CollectionTreeNode) {
   }
 }
 
+let lastAutoExpandedKey: string | null = null;
+
 async function syncSidebarToActiveTab() {
   await nextTick();
   const tree = collectionTreeRef.value as unknown as {
@@ -127,9 +129,10 @@ async function syncSidebarToActiveTab() {
   const key = activeTreeNodeKey.value;
   tree.setCurrentKey?.(key ?? undefined);
 
-  if (key) {
+  if (key && key !== lastAutoExpandedKey) {
     const ancestors = findAncestorCollectionIds(ws.collectionTree, key) ?? [];
     if (ancestors.length) {
+      lastAutoExpandedKey = key;
       const merged = new Set(expandedTreeKeys.value);
       for (const id of ancestors) {
         merged.add(id);
@@ -137,6 +140,8 @@ async function syncSidebarToActiveTab() {
       }
       expandedTreeKeys.value = Array.from(merged);
     }
+  } else if (!key) {
+    lastAutoExpandedKey = null;
   }
 }
 
@@ -744,7 +749,6 @@ defineExpose({
               :data="ws.collectionTree"
               node-key="id"
               highlight-current
-              :default-expanded-keys="expandedTreeKeys"
               :draggable="ws.canEdit"
               :allow-drop="allowTreeDrop"
               @node-click="handleTreeNodeClick"

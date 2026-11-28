@@ -39,6 +39,7 @@ async function initApp(): Promise<void> {
       ) => {
         if (
           !origin ||
+          origin === 'null' ||
           allowedOrigins.has('*') ||
           allowedOrigins.has(origin) ||
           /^https:\/\/api-open-[a-z0-9-]+\.vercel\.app$/i.test(origin)

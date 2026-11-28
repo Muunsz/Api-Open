@@ -498,13 +498,30 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  function getDesktopAuthBridge() {
+    return (
+      window as unknown as {
+        apiOpenDesktop?: {
+          isDesktop?: boolean;
+          openExternal?: (url: string) => Promise<boolean>;
+        };
+      }
+    ).apiOpenDesktop;
+  }
+
+  function getAuthRedirectUrl(): string {
+    return getDesktopAuthBridge()?.isDesktop
+      ? 'apiopen://auth/callback'
+      : window.location.origin;
+  }
+
   async function signUp(email: string, password: string) {
     if (!supabase) throw new Error('Supabase is not configured');
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: getAuthRedirectUrl(),
       },
     });
     workspaceApi.logAuthEmail({
@@ -522,7 +539,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: getAuthRedirectUrl(),
         shouldCreateUser: true,
       },
     });
@@ -538,8 +555,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function resetPasswordForEmail(email: string) {
     const cleanEmail = email.trim();
+    const redirectTo = getAuthRedirectUrl();
     const backendResult = await workspaceApi
-      .requestPasswordReset(cleanEmail, window.location.origin)
+      .requestPasswordReset(cleanEmail, redirectTo)
       .catch(() => null);
 
     if (backendResult?.handled) {
@@ -548,7 +566,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     if (!supabase) throw new Error('Supabase is not configured');
     const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-      redirectTo: window.location.origin,
+      redirectTo,
     });
     workspaceApi.logAuthEmail({
       to: cleanEmail,
@@ -566,7 +584,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       type: 'signup',
       email,
       options: {
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: getAuthRedirectUrl(),
       },
     });
     workspaceApi.logAuthEmail({
@@ -581,26 +599,76 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function signInWithOAuth(provider: 'google' | 'github' | 'discord') {
     if (!supabase) throw new Error('Supabase is not configured');
-    const { error } = await supabase.auth.signInWithOAuth({
+    const desktop = getDesktopAuthBridge();
+    const isDesktop = Boolean(desktop?.isDesktop);
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: getAuthRedirectUrl(),
+        ...(isDesktop ? { skipBrowserRedirect: true } : {}),
       },
     });
     if (error) throw error;
+    if (isDesktop && data?.url) {
+      if (desktop?.openExternal) {
+        await desktop.openExternal(data.url);
+      } else {
+        window.open(data.url, '_blank', 'noopener');
+      }
+    }
   }
 
   async function signInWithSso(domain: string) {
     if (!supabase) throw new Error('Supabase is not configured');
+    const desktop = getDesktopAuthBridge();
+    const isDesktop = Boolean(desktop?.isDesktop);
     const { data, error } = await supabase.auth.signInWithSSO({
       domain: domain.trim(),
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: getAuthRedirectUrl(),
       },
     });
     if (error) throw error;
     if (data?.url) {
-      window.location.href = data.url;
+      if (isDesktop && desktop?.openExternal) {
+        await desktop.openExternal(data.url);
+      } else {
+        window.location.href = data.url;
+      }
+    }
+  }
+
+  async function handleDeepLinkCallback(rawUrl: string) {
+    if (!supabase || !rawUrl.startsWith('apiopen://')) return;
+    try {
+      const parsed = new URL(rawUrl);
+      const queryParams = parsed.searchParams;
+      const hashRaw = parsed.hash.startsWith('#')
+        ? parsed.hash.slice(1)
+        : parsed.hash;
+      const hashParams = new URLSearchParams(hashRaw);
+
+      const code = queryParams.get('code') || hashParams.get('code');
+      const accessToken =
+        hashParams.get('access_token') || queryParams.get('access_token');
+      const refreshToken =
+        hashParams.get('refresh_token') || queryParams.get('refresh_token');
+      const type = queryParams.get('type') || hashParams.get('type');
+
+      if (code) {
+        await supabase.auth.exchangeCodeForSession(code);
+      } else if (accessToken && refreshToken) {
+        await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+      }
+
+      if (type === 'recovery') {
+        needsPasswordSetup.value = true;
+      }
+    } catch {
+      // ignore malformed deep-link callback
     }
   }
 
@@ -629,6 +697,34 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     } catch {
       // local session already cleared
     }
+  }
+
+  async function updateEmail(newEmail: string) {
+    if (!supabase) throw new Error('Supabase is not configured');
+    const cleanEmail = newEmail.trim();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      throw new Error('Please enter a valid email address');
+    }
+    const { error } = await supabase.auth.updateUser(
+      { email: cleanEmail },
+      { emailRedirectTo: getAuthRedirectUrl() },
+    );
+    if (error) throw error;
+  }
+
+  async function signOutAllDevices() {
+    needsEmailVerification.value = false;
+    pendingVerificationEmail.value = '';
+    clearSessionState();
+    if (!supabase) return;
+    await supabase.auth.signOut({ scope: 'global' });
+  }
+
+  async function deleteAccount() {
+    const token = accessToken.value;
+    if (!token) throw new Error('Not authenticated');
+    await workspaceApi.deleteAccount(token);
+    await signOut();
   }
 
   let inFlightWorkspaces: Promise<void> | null = null;
@@ -1547,6 +1643,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     signUp,
     signInWithOtp,
     resetPasswordForEmail,
+    signOutAllDevices,
+    updateEmail,
+    deleteAccount,
+    handleDeepLinkCallback,
     resendVerification,
     checkEmailVerification,
     signInWithOAuth,

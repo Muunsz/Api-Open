@@ -144,6 +144,13 @@ interface DesktopUpdateInfo {
   releaseUrl?: string;
   downloadUrl?: string;
   assetName?: string;
+  error?: string;
+}
+
+interface DesktopUpdateProgress {
+  percent: number;
+  receivedBytes: number;
+  totalBytes: number;
 }
 
 interface DesktopBridge {
@@ -152,14 +159,41 @@ interface DesktopBridge {
   downloadUpdate?: (payload: {
     url: string;
     fileName?: string;
-  }) => Promise<{ ok: boolean; filePath?: string; openedExternal?: boolean; error?: string }>;
+  }) => Promise<{
+    ok: boolean;
+    installing?: boolean;
+    filePath?: string;
+    openedExternal?: boolean;
+    error?: string;
+  }>;
   onUpdateAvailable?: (cb: (info: DesktopUpdateInfo) => void) => () => void;
+  onUpdateProgress?: (cb: (progress: DesktopUpdateProgress) => void) => () => void;
+  onDeepLink?: (cb: (url: string) => void) => () => void;
 }
 
 const desktopUpdateVisible = ref(false);
 const desktopUpdateInfo = ref<DesktopUpdateInfo | null>(null);
 const desktopUpdateDownloading = ref(false);
+const desktopUpdateProgress = ref<DesktopUpdateProgress | null>(null);
 let cleanupUpdateListener: (() => void) | null = null;
+let cleanupUpdateProgressListener: (() => void) | null = null;
+let cleanupDeepLinkListener: (() => void) | null = null;
+
+async function handleManualCheckUpdates() {
+  const bridge = (window as unknown as { apiOpenDesktop?: DesktopBridge })
+    .apiOpenDesktop;
+  if (!bridge?.checkForUpdates) return;
+  const info = await bridge.checkForUpdates();
+  if (info.updateAvailable) {
+    localStorage.removeItem('api_open_skipped_update_version');
+    desktopUpdateInfo.value = info;
+    desktopUpdateVisible.value = true;
+  } else if (info.error) {
+    ElMessage.warning(`Update check failed: ${info.error}`);
+  } else {
+    ElMessage.success(`You're on the latest version (v${info.currentVersion})`);
+  }
+}
 
 function showDesktopUpdatePrompt(info: DesktopUpdateInfo | null | undefined) {
   if (!info?.updateAvailable) return;
@@ -189,12 +223,17 @@ async function installDesktopUpdate() {
     return;
   }
   desktopUpdateDownloading.value = true;
+  desktopUpdateProgress.value = { percent: 0, receivedBytes: 0, totalBytes: 0 };
   try {
     const res = await bridge.downloadUpdate({
       url: info.downloadUrl,
       fileName: info.assetName,
     });
-    if (res.ok) {
+    if (res.ok && res.installing) {
+      ElMessage.success(
+        'Installing update in background... Api-Open will restart automatically.',
+      );
+    } else if (res.ok) {
       ElMessage.success(
         'Update downloaded! Follow the installer to finish updating.',
       );
@@ -522,6 +561,16 @@ onMounted(async () => {
         showDesktopUpdatePrompt(info);
       });
     }
+    if (desktopBridge.onUpdateProgress) {
+      cleanupUpdateProgressListener = desktopBridge.onUpdateProgress((progress) => {
+        desktopUpdateProgress.value = progress;
+      });
+    }
+    if (desktopBridge.onDeepLink) {
+      cleanupDeepLinkListener = desktopBridge.onDeepLink((url) => {
+        ws.handleDeepLinkCallback(url);
+      });
+    }
     if (desktopBridge.checkForUpdates) {
       desktopBridge.checkForUpdates().then((info) => {
         showDesktopUpdatePrompt(info);
@@ -534,6 +583,10 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
   cleanupUpdateListener?.();
   cleanupUpdateListener = null;
+  cleanupUpdateProgressListener?.();
+  cleanupUpdateProgressListener = null;
+  cleanupDeepLinkListener?.();
+  cleanupDeepLinkListener = null;
 });
 
 function handleTabEdit(
@@ -1240,6 +1293,7 @@ async function openEnvDialog(envId?: string) {
     <SettingsDialog
       v-model:visible="settingsVisible"
       :initial-tab="settingsInitialTab"
+      @check-updates="handleManualCheckUpdates"
     />
 
     <CookiesDialog v-model:visible="cookiesDialogVisible" />
@@ -1313,6 +1367,27 @@ async function openEnvDialog(envId?: string) {
           v-if="desktopUpdateInfo.releaseNotes"
           style="margin: 0; max-height: 150px; overflow: auto; padding: 10px 12px; border-radius: 8px; background: var(--ao-surface-2, rgba(255,255,255,0.04)); border: 1px solid var(--ao-border); font-size: 12px; white-space: pre-wrap; color: var(--ao-text-muted);"
         >{{ desktopUpdateInfo.releaseNotes }}</pre>
+        <div
+          v-if="desktopUpdateDownloading && desktopUpdateProgress"
+          style="display: flex; flex-direction: column; gap: 6px; padding-top: 4px;"
+        >
+          <el-progress
+            :percentage="desktopUpdateProgress.percent"
+            :stroke-width="10"
+          />
+          <div style="font-size: 12px; color: var(--ao-text-muted);">
+            <template v-if="desktopUpdateProgress.percent >= 100">
+              Installing update & restarting app...
+            </template>
+            <template v-else>
+              Downloading inside app:
+              {{ (desktopUpdateProgress.receivedBytes / 1048576).toFixed(1) }} MB
+              <template v-if="desktopUpdateProgress.totalBytes > 0">
+                / {{ (desktopUpdateProgress.totalBytes / 1048576).toFixed(1) }} MB
+              </template>
+            </template>
+          </div>
+        </div>
       </div>
       <template #footer>
         <div style="display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap;">

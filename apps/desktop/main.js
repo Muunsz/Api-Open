@@ -6,12 +6,29 @@ const {
   ipcMain,
   shell,
 } = require('electron');
+const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
 const path = require('node:path');
 
 let mainWindow = null;
+let pendingDeepLinkUrl =
+  process.argv.find((arg) => typeof arg === 'string' && arg.startsWith('apiopen://')) ||
+  null;
+
+function dispatchDeepLink(url) {
+  if (typeof url !== 'string' || !url.startsWith('apiopen://')) return;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    if (!mainWindow.webContents.isLoading()) {
+      mainWindow.webContents.send('api-open:deep-link', url);
+      return;
+    }
+  }
+  pendingDeepLinkUrl = url;
+}
 
 function getWindowStatePath() {
   return path.join(app.getPath('userData'), 'window-state.json');
@@ -366,7 +383,12 @@ function fetchJson(urlStr, maxRedirects = 5) {
   });
 }
 
-function downloadFileWithRedirects(urlStr, destPath, maxRedirects = 6) {
+function downloadFileWithRedirects(
+  urlStr,
+  destPath,
+  onProgress,
+  maxRedirects = 6,
+) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(urlStr);
     const transport = parsed.protocol === 'https:' ? https : http;
@@ -374,7 +396,7 @@ function downloadFileWithRedirects(urlStr, destPath, maxRedirects = 6) {
       parsed,
       {
         headers: { 'User-Agent': 'Api-Open-Desktop' },
-        timeout: 120000,
+        timeout: 180000,
       },
       (res) => {
         if (
@@ -385,7 +407,14 @@ function downloadFileWithRedirects(urlStr, destPath, maxRedirects = 6) {
         ) {
           res.resume();
           const nextUrl = new URL(res.headers.location, parsed).toString();
-          resolve(downloadFileWithRedirects(nextUrl, destPath, maxRedirects - 1));
+          resolve(
+            downloadFileWithRedirects(
+              nextUrl,
+              destPath,
+              onProgress,
+              maxRedirects - 1,
+            ),
+          );
           return;
         }
         if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -393,9 +422,33 @@ function downloadFileWithRedirects(urlStr, destPath, maxRedirects = 6) {
           reject(new Error(`Download failed with HTTP ${res.statusCode}`));
           return;
         }
+        const totalBytes = parseInt(res.headers['content-length'] || '0', 10) || 0;
+        let receivedBytes = 0;
+        let lastSentAt = 0;
+
+        res.on('data', (chunk) => {
+          receivedBytes += chunk.length;
+          const now = Date.now();
+          if (onProgress && (now - lastSentAt >= 120 || receivedBytes === totalBytes)) {
+            lastSentAt = now;
+            const percent =
+              totalBytes > 0
+                ? Math.min(100, Math.round((receivedBytes / totalBytes) * 100))
+                : 0;
+            onProgress({ percent, receivedBytes, totalBytes });
+          }
+        });
+
         const out = fs.createWriteStream(destPath);
         res.pipe(out);
         out.on('finish', () => {
+          if (onProgress) {
+            onProgress({
+              percent: 100,
+              receivedBytes,
+              totalBytes: totalBytes || receivedBytes,
+            });
+          }
           out.close(() => resolve(destPath));
         });
         out.on('error', (err) => {
@@ -550,6 +603,10 @@ function createWindow() {
   }
 
   win.webContents.once('did-finish-load', () => {
+    if (pendingDeepLinkUrl && !win.isDestroyed()) {
+      win.webContents.send('api-open:deep-link', pendingDeepLinkUrl);
+      pendingDeepLinkUrl = null;
+    }
     setTimeout(async () => {
       const info = await checkForDesktopUpdates();
       if (info.updateAvailable && !win.isDestroyed()) {
@@ -566,7 +623,18 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.setAsDefaultProtocolClient('apiopen');
 
-  app.on('second-instance', () => {
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    dispatchDeepLink(url);
+  });
+
+  app.on('second-instance', (_event, commandLine) => {
+    const deepLink = (commandLine || []).find(
+      (arg) => typeof arg === 'string' && arg.startsWith('apiopen://'),
+    );
+    if (deepLink) {
+      dispatchDeepLink(deepLink);
+    }
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
@@ -575,6 +643,16 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     setupApplicationMenu();
+
+    ipcMain.handle('api-open:get-version', () => app.getVersion());
+
+    ipcMain.handle('api-open:open-external', async (_event, url) => {
+      if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
+        await shell.openExternal(url);
+        return true;
+      }
+      return false;
+    });
 
     ipcMain.handle('api-open:execute-request', async (_event, payload) => {
       return executeLocalDesktopRequest(payload);
@@ -604,19 +682,54 @@ if (!app.requestSingleInstanceLock()) {
       return checkForDesktopUpdates();
     });
 
-    ipcMain.handle('api-open:download-update', async (_event, payload = {}) => {
+    ipcMain.handle('api-open:download-update', async (event, payload = {}) => {
       const url = payload.url;
       const fileName = payload.fileName || getPlatformAssetName();
       if (!url) return { ok: false, error: 'Missing download URL' };
       try {
-        const downloadsDir = app.getPath('downloads');
-        const destPath = path.join(downloadsDir, fileName);
-        await downloadFileWithRedirects(url, destPath);
+        const tempDir = app.getPath('temp');
+        const destPath = path.join(tempDir, `api-open-update-${Date.now()}-${fileName}`);
+        await downloadFileWithRedirects(url, destPath, (progress) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send('api-open:update-progress', progress);
+          }
+        });
+
+        if (app.isPackaged && process.platform === 'win32') {
+          const esc = (s) => String(s).replace(/'/g, "''");
+          const psScript = [
+            'Start-Sleep -Milliseconds 800',
+            `Start-Process -FilePath '${esc(destPath)}' -ArgumentList '/S' -Wait`,
+            `if (Test-Path '${esc(process.execPath)}') { Start-Process -FilePath '${esc(process.execPath)}' }`,
+          ].join('; ');
+          const child = spawn(
+            'powershell.exe',
+            ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psScript],
+            { detached: true, stdio: 'ignore' },
+          );
+          child.unref();
+          setTimeout(() => app.quit(), 350);
+          return { ok: true, installing: true, filePath: destPath };
+        }
+
+        if (
+          app.isPackaged &&
+          process.platform === 'linux' &&
+          process.env.APPIMAGE
+        ) {
+          fs.chmodSync(destPath, 0o755);
+          fs.copyFileSync(destPath, process.env.APPIMAGE);
+          fs.chmodSync(process.env.APPIMAGE, 0o755);
+          app.relaunch({ execPath: process.env.APPIMAGE });
+          setTimeout(() => app.exit(0), 250);
+          return { ok: true, installing: true, filePath: process.env.APPIMAGE };
+        }
+
         const openErr = await shell.openPath(destPath);
         if (openErr) {
           shell.showItemInFolder(destPath);
         }
-        return { ok: true, filePath: destPath };
+        return { ok: true, installing: false, filePath: destPath };
       } catch (err) {
         if (url) await shell.openExternal(url);
         return {

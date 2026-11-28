@@ -18,6 +18,12 @@
     "productName": "Api-Open",
     "electronVersion": "35.0.0",
     "npmRebuild": false,
+    "protocols": [
+      {
+        "name": "Api-Open",
+        "schemes": ["apiopen"]
+      }
+    ],
     "files": ["main.js", "preload.js"],
     "extraResources": [
       {

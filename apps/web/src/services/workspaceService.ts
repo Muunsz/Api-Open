@@ -368,4 +368,9 @@ export const workspaceService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }).catch(() => undefined),
+
+  deleteAccount: (token: string) =>
+    apiFetch<{ ok: boolean; deletedUserId: string }>('/auth/account', token, {
+      method: 'DELETE',
+    }),
 };

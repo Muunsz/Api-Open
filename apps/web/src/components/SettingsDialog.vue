@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import { ElMessage } from 'element-plus';
+import { computed, onMounted, ref, watch } from 'vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { resolveImageProxyUrl } from '../api/proxy';
 import { supabase } from '../lib/supabase';
 import { ACCENT_COLORS, useSettingsStore } from '../stores/settings';
@@ -13,6 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:visible': [value: boolean];
+  'check-updates': [];
 }>();
 
 const settings = useSettingsStore();
@@ -26,6 +27,30 @@ const uploadingAvatar = ref(false);
 const avatarFileInput = ref<HTMLInputElement | null>(null);
 const newPassword = ref('');
 const savingPassword = ref(false);
+const newEmail = ref('');
+const savingEmail = ref(false);
+const signingOutAll = ref(false);
+const deletingAccount = ref(false);
+const checkingUpdates = ref(false);
+
+const desktopBridge = (
+  window as unknown as {
+    apiOpenDesktop?: {
+      isDesktop?: boolean;
+      getAppVersion?: () => Promise<string>;
+    };
+  }
+).apiOpenDesktop;
+const isDesktopApp = Boolean(desktopBridge?.isDesktop);
+const desktopAppVersion = ref('1.2.0');
+
+onMounted(() => {
+  if (isDesktopApp && desktopBridge?.getAppVersion) {
+    desktopBridge.getAppVersion().then((v) => {
+      if (v) desktopAppVersion.value = v;
+    }).catch(() => {});
+  }
+});
 const newCertHost = ref('');
 const newCertPem = ref('');
 const newKeyPem = ref('');
@@ -181,6 +206,88 @@ async function handleChangePassword() {
     savingPassword.value = false;
   }
 }
+
+async function handleChangeEmail() {
+  const email = newEmail.value.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    ElMessage.warning('Please enter a valid email address');
+    return;
+  }
+  savingEmail.value = true;
+  try {
+    await ws.updateEmail(email);
+    newEmail.value = '';
+    ElMessage.success(
+      'Confirmation email sent! Check your inbox to confirm the new email.',
+    );
+  } catch (err) {
+    ElMessage.error(
+      err instanceof Error ? err.message : 'Failed to update email',
+    );
+  } finally {
+    savingEmail.value = false;
+  }
+}
+
+async function handleSignOutAllDevices() {
+  try {
+    await ElMessageBox.confirm(
+      'This will sign you out from all browsers and desktop devices. Continue?',
+      'Sign Out All Devices',
+      { type: 'warning', confirmButtonText: 'Sign Out All' },
+    );
+  } catch {
+    return;
+  }
+  signingOutAll.value = true;
+  try {
+    await ws.signOutAllDevices();
+    emit('update:visible', false);
+    ElMessage.success('Signed out from all devices');
+  } catch (err) {
+    ElMessage.error(
+      err instanceof Error ? err.message : 'Failed to sign out all devices',
+    );
+  } finally {
+    signingOutAll.value = false;
+  }
+}
+
+async function handleDeleteAccount() {
+  try {
+    await ElMessageBox.confirm(
+      'Permanently delete your account? This action cannot be undone.',
+      'Delete Account',
+      {
+        type: 'error',
+        confirmButtonText: 'Delete Forever',
+        confirmButtonClass: 'el-button--danger',
+      },
+    );
+  } catch {
+    return;
+  }
+  deletingAccount.value = true;
+  try {
+    await ws.deleteAccount();
+    emit('update:visible', false);
+    ElMessage.success('Your account has been deleted');
+  } catch (err) {
+    ElMessage.error(
+      err instanceof Error ? err.message : 'Failed to delete account',
+    );
+  } finally {
+    deletingAccount.value = false;
+  }
+}
+
+function handleCheckUpdatesClick() {
+  checkingUpdates.value = true;
+  emit('check-updates');
+  window.setTimeout(() => {
+    checkingUpdates.value = false;
+  }, 1200);
+}
 </script>
 
 <template>
@@ -302,6 +409,19 @@ async function handleChangePassword() {
               clearable
             />
           </el-form-item>
+
+          <el-form-item v-if="isDesktopApp" label="Desktop App & Updates">
+            <div style="display: flex; align-items: center; gap: 10px; width: 100%">
+              <el-tag size="small" effect="plain">v{{ desktopAppVersion }}</el-tag>
+              <el-button
+                size="small"
+                :loading="checkingUpdates"
+                @click="handleCheckUpdatesClick"
+              >
+                Check for Updates
+              </el-button>
+            </div>
+          </el-form-item>
         </el-form>
 
         <div style="display: flex; justify-content: flex-end; margin-top: 8px">
@@ -375,6 +495,45 @@ async function handleChangePassword() {
               @click="handleChangePassword"
             >
               Update
+            </el-button>
+          </div>
+
+          <el-divider>Change Email</el-divider>
+          <div style="display: flex; gap: 8px">
+            <el-input
+              v-model="newEmail"
+              type="email"
+              size="small"
+              placeholder="new-email@example.com"
+            />
+            <el-button
+              size="small"
+              :loading="savingEmail"
+              @click="handleChangeEmail"
+            >
+              Update Email
+            </el-button>
+          </div>
+
+          <el-divider>Session &amp; Danger Zone</el-divider>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <el-button
+              size="small"
+              type="warning"
+              plain
+              :loading="signingOutAll"
+              @click="handleSignOutAllDevices"
+            >
+              Sign Out All Devices
+            </el-button>
+            <el-button
+              size="small"
+              type="danger"
+              plain
+              :loading="deletingAccount"
+              @click="handleDeleteAccount"
+            >
+              Delete Account
             </el-button>
           </div>
         </template>
