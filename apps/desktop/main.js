@@ -697,10 +697,13 @@ if (!app.requestSingleInstanceLock()) {
 
         if (app.isPackaged && process.platform === 'win32') {
           const esc = (s) => String(s).replace(/'/g, "''");
+          const exeName = path.basename(process.execPath, '.exe');
           const psScript = [
-            'Start-Sleep -Milliseconds 800',
-            `Start-Process -FilePath '${esc(destPath)}' -ArgumentList '/S' -Wait`,
-            `if (Test-Path '${esc(process.execPath)}') { Start-Process -FilePath '${esc(process.execPath)}' }`,
+            `Wait-Process -Id ${process.pid} -Timeout 15 -ErrorAction SilentlyContinue`,
+            'Start-Sleep -Milliseconds 400',
+            `Start-Process -FilePath '${esc(destPath)}' -Wait`,
+            'Start-Sleep -Milliseconds 600',
+            `if (-not (Get-Process -Name '${esc(exeName)}' -ErrorAction SilentlyContinue) -and (Test-Path '${esc(process.execPath)}')) { Start-Process -FilePath '${esc(process.execPath)}' }`,
           ].join('; ');
           const child = spawn(
             'powershell.exe',
@@ -708,7 +711,12 @@ if (!app.requestSingleInstanceLock()) {
             { detached: true, stdio: 'ignore' },
           );
           child.unref();
-          setTimeout(() => app.quit(), 350);
+          setTimeout(() => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              saveWindowState(mainWindow);
+            }
+            app.exit(0);
+          }, 250);
           return { ok: true, installing: true, filePath: destPath };
         }
 
