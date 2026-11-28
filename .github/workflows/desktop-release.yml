@@ -2,20 +2,71 @@ name: Desktop Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/web/**'
+      - 'packages/shared/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/desktop-release.yml'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v0.1.0)'
-        required: true
-        default: 'v0.1.0'
+        description: 'Release tag (optional, auto-bumps patch if empty)'
+        required: false
+        default: ''
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - name: Resolve release tag
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ]; then
+            echo "tag=$REF_NAME" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$INPUT_TAG" ]; then
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LATEST_REL=$(gh release view --repo "$REPO" --json tagName -q '.tagName' 2>/dev/null || echo "")
+          LATEST_GIT=$(git ls-remote --tags --refs "https://github.com/${REPO}.git" "refs/tags/v*" 2>/dev/null | awk -F'/' '{print $NF}' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || echo "")
+          LATEST=$(printf '%s\n%s\n' "$LATEST_REL" "$LATEST_GIT" | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+
+          if [ -n "$LATEST" ]; then
+            CLEAN="${LATEST#v}"
+            MAJOR=$(echo "$CLEAN" | cut -d. -f1)
+            MINOR=$(echo "$CLEAN" | cut -d. -f2)
+            PATCH=$(echo "$CLEAN" | cut -d. -f3)
+            NEXT_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          else
+            NEXT_TAG="v1.3.7"
+          fi
+          echo "Auto-resolved release tag: $NEXT_TAG (previous: ${LATEST:-none})"
+          echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+
   build-electron:
+    needs: [prepare]
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +99,7 @@ jobs:
         working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           VERSION="${RELEASE_TAG#v}"
           if echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+'; then
@@ -74,7 +125,7 @@ jobs:
           path: release-assets/${{ matrix.asset_name }}
 
   publish-release:
-    needs: [build-electron]
+    needs: [prepare, build-electron]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
@@ -84,7 +135,7 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag || github.ref_name }}
+          TAG: ${{ needs.prepare.outputs.tag }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
