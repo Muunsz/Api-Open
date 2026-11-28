@@ -90,8 +90,11 @@ const highlightedHtml = computed(() => {
 
   if (props.language === 'json') {
     html = html.replace(
-      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
+      /(\/\/[^\n]*|"(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
       (match) => {
+        if (match.startsWith('//')) {
+          return `<span class="hl-comment">${match}</span>`;
+        }
         if (/^"/.test(match)) {
           if (/:$/.test(match)) return `<span class="hl-key">${match}</span>`;
           return `<span class="hl-str">${match}</span>`;
@@ -102,15 +105,36 @@ const highlightedHtml = computed(() => {
       },
     );
   } else if (props.language === 'javascript') {
-    html = html
-      .replace(/(\/\/[^\n]*)/g, '<span class="hl-comment">$1</span>')
-      .replace(/('[^']*'|"[^"]*"|`[^`]*`)/g, '<span class="hl-str">$1</span>')
-      .replace(
-        /\b(const|let|var|function|return|if|else|for|await|async|try|catch|true|false|null|pm|console)\b/g,
-        '<span class="hl-kw">$1</span>',
-      );
+    html = html.replace(
+      /(\/\/[^\n]*|'[^']*'|"[^"]*"|`[^`]*`|\b(?:const|let|var|function|return|if|else|for|await|async|try|catch|true|false|null|pm|console)\b)/g,
+      (match) => {
+        if (match.startsWith('//')) return `<span class="hl-comment">${match}</span>`;
+        if (/^['"`]/.test(match)) return `<span class="hl-str">${match}</span>`;
+        return `<span class="hl-kw">${match}</span>`;
+      },
+    );
   } else if (props.language === 'xml' || props.language === 'html') {
-    html = html.replace(/(&lt;\/?[a-zA-Z0-9:_-]+[^&]*?&gt;)/g, '<span class="hl-kw">$1</span>');
+    html = html.replace(
+      /(&lt;!--[\s\S]*?--&gt;|&lt;\/?[a-zA-Z0-9:_-]+[^&]*?&gt;)/g,
+      (match) => {
+        if (match.startsWith('&lt;!--')) {
+          return `<span class="hl-comment">${match}</span>`;
+        }
+        return `<span class="hl-kw">${match}</span>`;
+      },
+    );
+  } else if (props.language === 'yaml') {
+    html = html.replace(/(^[ \t]*#[^\n]*)/gm, '<span class="hl-comment">$1</span>');
+  } else if (props.language === 'graphql') {
+    html = html.replace(
+      /(^[ \t]*(?:#|\/\/)[^\n]*)/gm,
+      '<span class="hl-comment">$1</span>',
+    );
+  } else {
+    html = html.replace(
+      /(^[ \t]*\/\/[^\n]*)/gm,
+      '<span class="hl-comment">$1</span>',
+    );
   }
 
   // Highlight {{variables}} across all languages
@@ -388,8 +412,9 @@ function handleBlur() {
   font-weight: 600;
 }
 .ao-code-highlight :deep(.hl-comment) {
-  color: #64748b;
+  color: #6b7280;
   font-style: italic;
+  opacity: 0.85;
 }
 .ao-code-highlight :deep(.hl-var) {
   color: #fbbf24;

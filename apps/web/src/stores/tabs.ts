@@ -16,6 +16,10 @@ import {
   isDesktopAgentAvailable,
 } from '../api/proxy';
 import { type ApiRequestDto, workspaceApi } from '../api/workspace';
+import {
+  type CommentLanguage,
+  stripCommentedLines,
+} from '../utils/editorComments';
 import { parseCurlCommand } from '../utils/curlParser';
 import { unwrapStringifiedBody } from '../utils/bodyFormat';
 import {
@@ -349,8 +353,9 @@ export const useTabsStore = defineStore('tabs', () => {
 
     const queryParams: Record<string, string> = {};
     for (const row of tab.queryParams) {
-      if (row.enabled && row.key.trim()) {
-        queryParams[r(row.key.trim())] = r(row.value);
+      const k = row.key.trim();
+      if (row.enabled && k && !k.startsWith('//')) {
+        queryParams[r(k)] = stripCommentedLines(r(row.value));
       }
     }
 
@@ -359,13 +364,15 @@ export const useTabsStore = defineStore('tabs', () => {
 
     const headers: Record<string, string> = {};
     for (const row of inherited.headers) {
-      if (row.enabled && row.key.trim()) {
-        headers[r(row.key.trim())] = r(row.value);
+      const k = row.key.trim();
+      if (row.enabled && k && !k.startsWith('//')) {
+        headers[r(k)] = stripCommentedLines(r(row.value));
       }
     }
     for (const row of tab.headers) {
-      if (row.enabled && row.key.trim()) {
-        headers[r(row.key.trim())] = r(row.value);
+      const k = row.key.trim();
+      if (row.enabled && k && !k.startsWith('//')) {
+        headers[r(k)] = stripCommentedLines(r(row.value));
       }
     }
 
@@ -426,25 +433,38 @@ export const useTabsStore = defineStore('tabs', () => {
       };
     }
 
+    const rawLang: CommentLanguage =
+      tab.body.rawType === 'json' ||
+      tab.body.rawType === 'xml' ||
+      tab.body.rawType === 'html'
+        ? tab.body.rawType
+        : 'text';
+
     const resolvedBody: BodyConfig = {
       ...tab.body,
-      raw: tab.body.raw ? r(tab.body.raw) : tab.body.raw,
-      urlencoded: tab.body.urlencoded?.map((row) => ({
-        ...row,
-        key: r(row.key),
-        value: r(row.value),
-      })),
-      formData: tab.body.formData?.map((row) => ({
-        ...row,
-        key: r(row.key),
-        value: row.type === 'text' ? r(row.value) : row.value,
-      })),
+      raw: tab.body.raw
+        ? stripCommentedLines(r(tab.body.raw), rawLang)
+        : tab.body.raw,
+      urlencoded: tab.body.urlencoded
+        ?.filter((row) => !row.key.trim().startsWith('//'))
+        .map((row) => ({
+          ...row,
+          key: r(row.key),
+          value: stripCommentedLines(r(row.value)),
+        })),
+      formData: tab.body.formData
+        ?.filter((row) => !row.key.trim().startsWith('//'))
+        .map((row) => ({
+          ...row,
+          key: r(row.key),
+          value: row.type === 'text' ? stripCommentedLines(r(row.value)) : row.value,
+        })),
       binary: tab.body.binary,
       graphql: tab.body.graphql
         ? {
-            query: r(tab.body.graphql.query),
+            query: stripCommentedLines(r(tab.body.graphql.query), 'graphql'),
             variables: tab.body.graphql.variables
-              ? r(tab.body.graphql.variables)
+              ? stripCommentedLines(r(tab.body.graphql.variables), 'json')
               : undefined,
           }
         : undefined,

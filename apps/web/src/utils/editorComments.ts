@@ -102,3 +102,22 @@ export function toggleCommentOnSelection(
     nextEnd: Math.max(lineStart, lineEnd + delta),
   };
 }
+
+/**
+ * Strips full-line comments from request payloads/inputs before sending.
+ */
+export function stripCommentedLines(
+  text: string,
+  language: CommentLanguage = 'text',
+): string {
+  if (!text) return text;
+  const filtered = text
+    .split('\n')
+    .filter((line) => !isLineCommented(line, language) || !line.trim())
+    .join('\n');
+
+  if (language === 'json') {
+    return filtered.replace(/,(\s*[}\]])/g, '$1');
+  }
+  return filtered;
+}
