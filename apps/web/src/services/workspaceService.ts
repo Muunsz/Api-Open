@@ -64,6 +64,7 @@ export const workspaceService = {
   ) =>
     apiFetch<{
       addedImmediately: boolean;
+      pendingAcceptance?: boolean;
       notified: boolean;
       email: string;
       role: string;
@@ -393,4 +394,35 @@ export const workspaceService = {
     apiFetch<{ ok: boolean; deletedUserId: string }>('/auth/account', token, {
       method: 'DELETE',
     }),
+
+  listPendingInvitations: (token: string) =>
+    apiFetch<
+      Array<{
+        id: string;
+        workspaceId: string;
+        email: string;
+        inviterLabel: string;
+        role: string;
+        status: string;
+        createdAt: string;
+        workspace?: { id: string; name: string; type: string };
+      }>
+    >('/workspaces/invitations/pending', token),
+
+  acceptInvitation: (token: string, invitationId: string) =>
+    apiFetch<{
+      accepted: boolean;
+      workspaceId: string;
+      workspaceName: string;
+      role: string;
+    }>(`/workspaces/invitations/${invitationId}/accept`, token, {
+      method: 'POST',
+    }),
+
+  declineInvitation: (token: string, invitationId: string) =>
+    apiFetch<{ declined: boolean; id: string }>(
+      `/workspaces/invitations/${invitationId}/decline`,
+      token,
+      { method: 'POST' },
+    ),
 };

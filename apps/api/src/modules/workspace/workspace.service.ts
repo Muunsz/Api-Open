@@ -141,33 +141,171 @@ export class WorkspaceService {
     });
     const inviterLabel = inviter?.name || inviter?.email || 'A teammate';
 
+    let alreadyMember = false;
     if (targetUser) {
-      await this.prisma.workspaceMember.upsert({
+      const existingMember = await this.prisma.workspaceMember.findUnique({
         where: {
           workspaceId_userId: { workspaceId, userId: targetUser.id },
         },
-        update: { role },
-        create: { workspaceId, userId: targetUser.id, role },
       });
+      if (existingMember) {
+        alreadyMember = true;
+        await this.prisma.workspaceMember.update({
+          where: { id: existingMember.id },
+          data: { role },
+        });
+      }
+    }
 
-      await this.prisma.activityLog.create({
-        data: {
-          userId: targetUser.id,
+    if (!alreadyMember) {
+      await this.prisma.workspaceInvitation.upsert({
+        where: {
+          workspaceId_email: { workspaceId, email: cleanEmail },
+        },
+        update: {
+          role,
+          inviterId,
+          inviterLabel,
+          userId: targetUser?.id ?? null,
+          status: 'PENDING',
+        },
+        create: {
           workspaceId,
-          type: 'activity',
-          message: `${inviterLabel} invited you as ${role} to workspace "${workspace.name}"`,
+          email: cleanEmail,
+          userId: targetUser?.id ?? null,
+          inviterId,
+          inviterLabel,
+          role,
+          status: 'PENDING',
         },
       });
+
+      if (targetUser) {
+        await this.prisma.activityLog.create({
+          data: {
+            userId: targetUser.id,
+            workspaceId,
+            type: 'activity',
+            message: `${inviterLabel} invited you as ${role} to workspace "${workspace.name}" (waiting for acceptance)`,
+          },
+        });
+      }
     }
 
     return {
-      addedImmediately: Boolean(targetUser),
+      addedImmediately: alreadyMember,
+      pendingAcceptance: !alreadyMember,
       notified: Boolean(targetUser),
       email: cleanEmail,
       role,
       workspaceName: workspace.name,
       inviterLabel,
     };
+  }
+
+  async listPendingInvitations(userId: string, userEmail?: string) {
+    const cleanEmail = userEmail?.trim().toLowerCase();
+    const filters: Array<{ userId?: string; email?: string }> = [{ userId }];
+    if (cleanEmail) {
+      filters.push({ email: cleanEmail });
+    }
+    return this.prisma.workspaceInvitation.findMany({
+      where: {
+        status: 'PENDING',
+        OR: filters,
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        workspace: { select: { id: true, name: true, type: true } },
+      },
+    });
+  }
+
+  async acceptInvitation(
+    invitationId: string,
+    userId: string,
+    userEmail?: string,
+  ) {
+    const invitation = await this.prisma.workspaceInvitation.findUnique({
+      where: { id: invitationId },
+      include: { workspace: { select: { id: true, name: true } } },
+    });
+    const cleanEmail = userEmail?.trim().toLowerCase();
+    const isRecipient =
+      invitation &&
+      (invitation.userId === userId ||
+        (cleanEmail && invitation.email.toLowerCase() === cleanEmail));
+
+    if (!invitation || !isRecipient) {
+      throw new ForbiddenException('Invitation not found for this account');
+    }
+    if (invitation.status !== 'PENDING') {
+      throw new BadRequestException('Invitation is no longer pending');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.workspaceInvitation.update({
+        where: { id: invitation.id },
+        data: { status: 'ACCEPTED', userId },
+      }),
+      this.prisma.workspaceMember.upsert({
+        where: {
+          workspaceId_userId: {
+            workspaceId: invitation.workspaceId,
+            userId,
+          },
+        },
+        update: { role: invitation.role },
+        create: {
+          workspaceId: invitation.workspaceId,
+          userId,
+          role: invitation.role,
+        },
+      }),
+      this.prisma.activityLog.create({
+        data: {
+          userId,
+          workspaceId: invitation.workspaceId,
+          type: 'activity',
+          message: `Accepted invitation to join workspace "${invitation.workspace.name}" as ${invitation.role}`,
+        },
+      }),
+    ]);
+
+    return {
+      accepted: true,
+      workspaceId: invitation.workspaceId,
+      workspaceName: invitation.workspace.name,
+      role: invitation.role,
+    };
+  }
+
+  async declineInvitation(
+    invitationId: string,
+    userId: string,
+    userEmail?: string,
+  ) {
+    const invitation = await this.prisma.workspaceInvitation.findUnique({
+      where: { id: invitationId },
+    });
+    const cleanEmail = userEmail?.trim().toLowerCase();
+    const isRecipient =
+      invitation &&
+      (invitation.userId === userId ||
+        (cleanEmail && invitation.email.toLowerCase() === cleanEmail));
+
+    if (!invitation || !isRecipient) {
+      throw new ForbiddenException('Invitation not found for this account');
+    }
+    if (invitation.status !== 'PENDING') {
+      return { declined: true, id: invitation.id };
+    }
+
+    await this.prisma.workspaceInvitation.update({
+      where: { id: invitation.id },
+      data: { status: 'DECLINED', userId },
+    });
+    return { declined: true, id: invitation.id };
   }
 
   async updateMemberRole(

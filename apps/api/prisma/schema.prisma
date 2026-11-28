@@ -19,6 +19,12 @@ enum WorkspaceRole {
   VIEWER
 }
 
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
 enum HttpMethod {
   GET
   POST
@@ -58,6 +64,26 @@ model Workspace {
   histories    RequestHistory[]
   activityLogs ActivityLog[]
   monitors     Monitor[]
+  invitations  WorkspaceInvitation[]
+}
+
+model WorkspaceInvitation {
+  id           String           @id @default(uuid())
+  workspaceId  String
+  email        String
+  userId       String?
+  inviterId    String
+  inviterLabel String
+  role         WorkspaceRole    @default(EDITOR)
+  status       InvitationStatus @default(PENDING)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, email])
+  @@index([email, status])
+  @@index([userId, status])
 }
 
 model WorkspaceMember {

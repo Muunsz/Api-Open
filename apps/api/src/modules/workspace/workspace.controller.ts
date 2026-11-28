@@ -45,6 +45,35 @@ export class WorkspaceController {
     );
   }
 
+  @Get('invitations/pending')
+  listPendingInvitations(@CurrentUser() user: AuthUser) {
+    return this.workspaceService.listPendingInvitations(user.id, user.email);
+  }
+
+  @Post('invitations/:invitationId/accept')
+  acceptInvitation(
+    @Param('invitationId') invitationId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.workspaceService.acceptInvitation(
+      invitationId,
+      user.id,
+      user.email,
+    );
+  }
+
+  @Post('invitations/:invitationId/decline')
+  declineInvitation(
+    @Param('invitationId') invitationId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.workspaceService.declineInvitation(
+      invitationId,
+      user.id,
+      user.email,
+    );
+  }
+
   @Post('logs')
   createLog(
     @CurrentUser() user: AuthUser,

@@ -267,6 +267,19 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const needsPasswordSetup = ref(false);
   const needsEmailVerification = ref(false);
   const pendingVerificationEmail = ref('');
+  const pendingInvitations = ref<
+    Array<{
+      id: string;
+      workspaceId: string;
+      email: string;
+      inviterLabel: string;
+      role: string;
+      status: string;
+      createdAt: string;
+      workspace?: { id: string; name: string; type: string };
+    }>
+  >([]);
+  let invitePollTimer: number | null = null;
   const isAuthenticated = computed(() => Boolean(accessToken.value && user.value));
   const currentUserRole = computed(() => {
     const wsObj = workspaces.value.find((w) => w.id === activeWorkspaceId.value);
@@ -462,6 +475,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           return;
         }
         await loadWorkspaces();
+        loadPendingInvitations();
         if (event === 'SIGNED_IN' && !needsPasswordSetup.value) {
           maybeSendOAuthSetPasswordEmail(user.value);
         }
@@ -482,20 +496,34 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
     if (accessToken.value) {
       await loadWorkspaces();
+      loadPendingInvitations();
       if (!needsPasswordSetup.value) {
         maybeSendOAuthSetPasswordEmail(user.value);
       }
     }
 
+    if (typeof window !== 'undefined' && invitePollTimer === null) {
+      invitePollTimer = window.setInterval(() => {
+        if (
+          accessToken.value &&
+          (typeof document === 'undefined' ||
+            document.visibilityState === 'visible')
+        ) {
+          loadPendingInvitations();
+        }
+      }, 15000);
+    }
+
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
-        if (
-          document.visibilityState === 'visible' &&
-          accessToken.value &&
-          lastWorkspaceSyncAt > 0 &&
-          Date.now() - lastWorkspaceSyncAt >= WORKSPACE_SYNC_TTL_MS
-        ) {
-          loadWorkspaces().catch(() => undefined);
+        if (document.visibilityState === 'visible' && accessToken.value) {
+          loadPendingInvitations();
+          if (
+            lastWorkspaceSyncAt > 0 &&
+            Date.now() - lastWorkspaceSyncAt >= WORKSPACE_SYNC_TTL_MS
+          ) {
+            loadWorkspaces().catch(() => undefined);
+          }
         }
       });
     }
@@ -735,9 +763,49 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return false;
   }
 
+  async function loadPendingInvitations() {
+    if (!accessToken.value) {
+      pendingInvitations.value = [];
+      return;
+    }
+    try {
+      pendingInvitations.value = await workspaceApi.listPendingInvitations(
+        accessToken.value,
+      );
+    } catch {
+      // keep existing invitations if offline
+    }
+  }
+
+  async function acceptInvitation(invitationId: string) {
+    if (!accessToken.value) return null;
+    const res = await workspaceApi.acceptInvitation(
+      accessToken.value,
+      invitationId,
+    );
+    pendingInvitations.value = pendingInvitations.value.filter(
+      (i) => i.id !== invitationId,
+    );
+    await loadWorkspaces();
+    if (res.workspaceId) {
+      activeWorkspaceId.value = res.workspaceId;
+      await loadWorkspaceData(res.workspaceId);
+    }
+    return res;
+  }
+
+  async function declineInvitation(invitationId: string) {
+    if (!accessToken.value) return;
+    await workspaceApi.declineInvitation(accessToken.value, invitationId);
+    pendingInvitations.value = pendingInvitations.value.filter(
+      (i) => i.id !== invitationId,
+    );
+  }
+
   async function signOut() {
     needsEmailVerification.value = false;
     pendingVerificationEmail.value = '';
+    pendingInvitations.value = [];
     clearSessionState();
     if (!supabase) return;
     try {
@@ -1691,6 +1759,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     needsPasswordSetup,
     needsEmailVerification,
     pendingVerificationEmail,
+    pendingInvitations,
+    loadPendingInvitations,
+    acceptInvitation,
+    declineInvitation,
     initAuth,
     signIn,
     signUp,

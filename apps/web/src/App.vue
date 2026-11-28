@@ -184,6 +184,40 @@ let cleanupUpdateListener: (() => void) | null = null;
 let cleanupUpdateProgressListener: (() => void) | null = null;
 let cleanupDeepLinkListener: (() => void) | null = null;
 
+const actingInvitationId = ref<string | null>(null);
+
+async function handleAcceptInvite(invitationId: string) {
+  actingInvitationId.value = invitationId;
+  try {
+    const res = await ws.acceptInvitation(invitationId);
+    ElMessage.success(
+      res?.workspaceName
+        ? `Joined workspace "${res.workspaceName}"`
+        : 'Workspace invitation accepted',
+    );
+  } catch (err) {
+    ElMessage.error(
+      err instanceof Error ? err.message : 'Failed to accept invitation',
+    );
+  } finally {
+    actingInvitationId.value = null;
+  }
+}
+
+async function handleDeclineInvite(invitationId: string) {
+  actingInvitationId.value = invitationId;
+  try {
+    await ws.declineInvitation(invitationId);
+    ElMessage.info('Invitation declined');
+  } catch (err) {
+    ElMessage.error(
+      err instanceof Error ? err.message : 'Failed to decline invitation',
+    );
+  } finally {
+    actingInvitationId.value = null;
+  }
+}
+
 function checkIsBackpanelUrl(): boolean {
   const path = window.location.pathname.replace(/\/+$/, '');
   return (
@@ -1334,7 +1368,43 @@ async function openEnvDialog(envId?: string) {
             </div>
           </div>
         </el-main>
-      </el-container>
+        <div
+      v-if="ws.isAuthenticated && ws.pendingInvitations.length"
+      class="invite-toast-stack"
+    >
+      <div
+        v-for="inv in ws.pendingInvitations"
+        :key="inv.id"
+        class="invite-toast-card"
+      >
+        <div class="invite-toast-header">
+          <span class="invite-toast-badge">Workspace Invite</span>
+          <span class="invite-toast-role">{{ inv.role }}</span>
+        </div>
+        <div class="invite-toast-body">
+          <strong>{{ inv.inviterLabel }}</strong> invited you to join
+          <strong>{{ inv.workspace?.name || 'Team Workspace' }}</strong>.
+        </div>
+        <div class="invite-toast-actions">
+          <el-button
+            size="small"
+            :disabled="actingInvitationId === inv.id"
+            @click="handleDeclineInvite(inv.id)"
+          >
+            Decline
+          </el-button>
+          <el-button
+            size="small"
+            type="primary"
+            :loading="actingInvitationId === inv.id"
+            @click="handleAcceptInvite(inv.id)"
+          >
+            Accept
+          </el-button>
+        </div>
+      </div>
+    </div>
+  </el-container>
     </div>
 
     <StatusFooter
@@ -1502,6 +1572,42 @@ async function openEnvDialog(envId?: string) {
         </div>
       </template>
     </el-dialog>
+    <div
+      v-if="ws.isAuthenticated && ws.pendingInvitations.length"
+      class="invite-toast-stack"
+    >
+      <div
+        v-for="inv in ws.pendingInvitations"
+        :key="inv.id"
+        class="invite-toast-card"
+      >
+        <div class="invite-toast-header">
+          <span class="invite-toast-badge">Workspace Invite</span>
+          <span class="invite-toast-role">{{ inv.role }}</span>
+        </div>
+        <div class="invite-toast-body">
+          <strong>{{ inv.inviterLabel }}</strong> invited you to join
+          <strong>{{ inv.workspace?.name || 'Team Workspace' }}</strong>.
+        </div>
+        <div class="invite-toast-actions">
+          <el-button
+            size="small"
+            :disabled="actingInvitationId === inv.id"
+            @click="handleDeclineInvite(inv.id)"
+          >
+            Decline
+          </el-button>
+          <el-button
+            size="small"
+            type="primary"
+            :loading="actingInvitationId === inv.id"
+            @click="handleAcceptInvite(inv.id)"
+          >
+            Accept
+          </el-button>
+        </div>
+      </div>
+    </div>
   </el-container>
 </template>
 
@@ -1551,5 +1657,56 @@ async function openEnvDialog(envId?: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.invite-toast-stack {
+  position: fixed;
+  right: 16px;
+  bottom: 36px;
+  z-index: 3200;
+  width: min(350px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.invite-toast-card {
+  padding: 13px 15px;
+  border-radius: 12px;
+  background: var(--ao-surface);
+  border: 1px solid var(--el-color-primary);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.invite-toast-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.invite-toast-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--el-color-primary);
+}
+.invite-toast-role {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.14);
+  color: var(--el-color-primary);
+}
+.invite-toast-body {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ao-text);
+}
+.invite-toast-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 </style>

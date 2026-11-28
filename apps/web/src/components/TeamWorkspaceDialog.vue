@@ -46,7 +46,13 @@ async function handleInviteMember() {
     const res = await ws.inviteMember(inviteEmail.value, inviteRole.value);
     inviteEmail.value = '';
     if (res.addedImmediately) {
-      ElMessage.success('Member added & push notification sent to their account');
+      ElMessage.success('Member role updated in workspace');
+    } else if (res.pendingAcceptance) {
+      ElMessage.success(
+        res.notified
+          ? 'Invitation sent! Waiting for them to accept in the app.'
+          : 'Invitation created! They will see it to accept once they sign in.',
+      );
     } else {
       ElMessage.warning(
         'Account with this email is not registered yet. Ask them to sign up first.',
