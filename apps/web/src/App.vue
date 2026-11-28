@@ -140,6 +140,8 @@ interface DesktopUpdateInfo {
   currentVersion: string;
   latestVersion: string;
   updateAvailable: boolean;
+  updateMode?: 'in_app' | 'reinstall';
+  updateNotice?: string;
   releaseName?: string;
   releaseNotes?: string;
   releaseUrl?: string;
@@ -160,9 +162,11 @@ interface DesktopBridge {
   downloadUpdate?: (payload: {
     url: string;
     fileName?: string;
+    mode?: 'in_app' | 'reinstall';
   }) => Promise<{
     ok: boolean;
     installing?: boolean;
+    requiresReinstall?: boolean;
     filePath?: string;
     openedExternal?: boolean;
     error?: string;
@@ -265,11 +269,17 @@ async function installDesktopUpdate() {
     const res = await bridge.downloadUpdate({
       url: info.downloadUrl,
       fileName: info.assetName,
+      mode: info.updateMode,
     });
     if (res.ok && res.installing) {
       ElMessage.success(
         'Installing update in background... Api-Open will restart automatically.',
       );
+    } else if (res.ok && res.requiresReinstall) {
+      ElMessage.warning(
+        'Installer downloaded to Downloads. Please uninstall/close the current app, then run the new installer.',
+      );
+      desktopUpdateVisible.value = false;
     } else if (res.ok) {
       ElMessage.success(
         'Update downloaded! Follow the installer to finish updating.',
@@ -1425,6 +1435,22 @@ async function openEnvDialog(envId?: string) {
             (installed: v{{ desktopUpdateInfo.currentVersion }})
           </span>
         </div>
+        <el-alert
+          :type="desktopUpdateInfo.updateMode === 'reinstall' ? 'warning' : 'info'"
+          :closable="false"
+          show-icon
+          :title="
+            desktopUpdateInfo.updateMode === 'reinstall'
+              ? 'Clean Reinstall Required (Uninstall Old First)'
+              : 'Direct In-App Update (No Uninstall Needed)'
+          "
+          :description="
+            desktopUpdateInfo.updateNotice ||
+            (desktopUpdateInfo.updateMode === 'reinstall'
+              ? 'Download the new installer, uninstall/close the current app, then install the new version.'
+              : 'The update will install directly inside the app and restart automatically.')
+          "
+        />
         <pre
           v-if="desktopUpdateInfo.releaseNotes"
           style="margin: 0; max-height: 150px; overflow: auto; padding: 10px 12px; border-radius: 8px; background: var(--ao-surface-2, rgba(255,255,255,0.04)); border: 1px solid var(--ao-border); font-size: 12px; white-space: pre-wrap; color: var(--ao-text-muted);"
@@ -1465,7 +1491,13 @@ async function openEnvDialog(envId?: string) {
             :loading="desktopUpdateDownloading"
             @click="installDesktopUpdate"
           >
-            {{ desktopUpdateDownloading ? 'Downloading...' : 'Download & Update' }}
+            {{
+              desktopUpdateDownloading
+                ? 'Downloading...'
+                : desktopUpdateInfo?.updateMode === 'reinstall'
+                  ? 'Download Installer'
+                  : 'Update Inside App'
+            }}
           </el-button>
         </div>
       </template>

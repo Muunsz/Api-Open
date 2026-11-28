@@ -462,6 +462,30 @@ function downloadFileWithRedirects(
   });
 }
 
+function resolveUpdateMode(currentVersion, latestVersion, releaseNotes) {
+  const curMajor = parseInt(String(currentVersion).split('.')[0], 10) || 0;
+  const latMajor = parseInt(String(latestVersion).split('.')[0], 10) || 0;
+  const notes = String(releaseNotes || '').toLowerCase();
+  const explicitReinstall =
+    notes.includes('[reinstall]') ||
+    notes.includes('[clean-install]') ||
+    notes.includes('requires uninstall') ||
+    notes.includes('clean reinstall');
+
+  if (latMajor > curMajor || explicitReinstall) {
+    return {
+      updateMode: 'reinstall',
+      updateNotice:
+        'This release requires uninstalling the old version first. Download the installer below, uninstall/close the current app, then run the new installer.',
+    };
+  }
+  return {
+    updateMode: 'in_app',
+    updateNotice:
+      'No uninstall required. The update will download and install directly inside the app, then Api-Open will restart automatically.',
+  };
+}
+
 async function checkForDesktopUpdates() {
   const currentVersion = app.getVersion();
   try {
@@ -474,12 +498,20 @@ async function checkForDesktopUpdates() {
     const asset = (data.assets || []).find((a) => a.name === assetName);
     const updateAvailable =
       Boolean(latestVersion) && compareSemver(latestVersion, currentVersion) > 0;
+    const releaseNotes = String(data.body || '').trim();
+    const { updateMode, updateNotice } = resolveUpdateMode(
+      currentVersion,
+      latestVersion || currentVersion,
+      releaseNotes,
+    );
     return {
       currentVersion,
       latestVersion: latestVersion || currentVersion,
       updateAvailable,
+      updateMode,
+      updateNotice,
       releaseName: data.name || latestTag || `v${currentVersion}`,
-      releaseNotes: String(data.body || '').trim(),
+      releaseNotes,
       releaseUrl:
         data.html_url || 'https://github.com/Muunsz/Api-Open/releases/latest',
       downloadUrl: asset?.browser_download_url || data.html_url || '',
@@ -685,15 +717,30 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle('api-open:download-update', async (event, payload = {}) => {
       const url = payload.url;
       const fileName = payload.fileName || getPlatformAssetName();
+      const mode = payload.mode === 'reinstall' ? 'reinstall' : 'in_app';
       if (!url) return { ok: false, error: 'Missing download URL' };
       try {
-        const tempDir = app.getPath('temp');
-        const destPath = path.join(tempDir, `api-open-update-${Date.now()}-${fileName}`);
+        const targetDir =
+          mode === 'reinstall' ? app.getPath('downloads') : app.getPath('temp');
+        const destPath =
+          mode === 'reinstall'
+            ? path.join(targetDir, fileName)
+            : path.join(targetDir, `api-open-update-${Date.now()}-${fileName}`);
         await downloadFileWithRedirects(url, destPath, (progress) => {
           if (!event.sender.isDestroyed()) {
             event.sender.send('api-open:update-progress', progress);
           }
         });
+
+        if (mode === 'reinstall') {
+          shell.showItemInFolder(destPath);
+          return {
+            ok: true,
+            installing: false,
+            requiresReinstall: true,
+            filePath: destPath,
+          };
+        }
 
         if (app.isPackaged && process.platform === 'win32') {
           const esc = (s) => String(s).replace(/'/g, "''");
