@@ -778,9 +778,14 @@ if (!app.requestSingleInstanceLock()) {
 
         if (app.isPackaged && process.platform === 'win32') {
           const exeFileName = path.basename(process.execPath);
+          const stamp = Date.now();
           const batchPath = path.join(
             app.getPath('temp'),
-            `api-open-updater-${Date.now()}.cmd`,
+            `api-open-updater-${stamp}.cmd`,
+          );
+          const vbsPath = path.join(
+            app.getPath('temp'),
+            `api-open-updater-${stamp}.vbs`,
           );
           const batchLines = [
             '@echo off',
@@ -792,13 +797,15 @@ if (!app.requestSingleInstanceLock()) {
             'if errorlevel 1 (',
             `  if exist "${process.execPath}" start "" "${process.execPath}"`,
             ')',
+            `del "${vbsPath}" >nul 2>&1`,
             'del "%~f0" >nul 2>&1',
           ].join('\r\n');
           fs.writeFileSync(batchPath, batchLines, 'utf8');
-          const child = spawn('cmd.exe', ['/c', batchPath], {
+          const vbsContent = `CreateObject("WScript.Shell").Run """${batchPath.replace(/"/g, '""')}""", 0, False\r\n`;
+          fs.writeFileSync(vbsPath, vbsContent, 'utf8');
+          const child = spawn('wscript.exe', [vbsPath], {
             detached: true,
             stdio: 'ignore',
-            windowsHide: true,
           });
           child.unref();
           setTimeout(() => {
