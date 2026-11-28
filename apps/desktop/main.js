@@ -777,20 +777,29 @@ if (!app.requestSingleInstanceLock()) {
         }
 
         if (app.isPackaged && process.platform === 'win32') {
-          const esc = (s) => String(s).replace(/'/g, "''");
-          const exeName = path.basename(process.execPath, '.exe');
-          const psScript = [
-            `Wait-Process -Id ${process.pid} -Timeout 15 -ErrorAction SilentlyContinue`,
-            'Start-Sleep -Milliseconds 400',
-            `Start-Process -FilePath '${esc(destPath)}' -Wait`,
-            'Start-Sleep -Milliseconds 600',
-            `if (-not (Get-Process -Name '${esc(exeName)}' -ErrorAction SilentlyContinue) -and (Test-Path '${esc(process.execPath)}')) { Start-Process -FilePath '${esc(process.execPath)}' }`,
-          ].join('; ');
-          const child = spawn(
-            'powershell.exe',
-            ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psScript],
-            { detached: true, stdio: 'ignore' },
+          const exeFileName = path.basename(process.execPath);
+          const batchPath = path.join(
+            app.getPath('temp'),
+            `api-open-updater-${Date.now()}.cmd`,
           );
+          const batchLines = [
+            '@echo off',
+            'timeout /t 2 /nobreak >nul',
+            `taskkill /F /IM "${exeFileName}" >nul 2>&1`,
+            'timeout /t 1 /nobreak >nul',
+            `start "" /wait "${destPath}"`,
+            `tasklist /FI "IMAGENAME eq ${exeFileName}" | find /I "${exeFileName}" >nul`,
+            'if errorlevel 1 (',
+            `  if exist "${process.execPath}" start "" "${process.execPath}"`,
+            ')',
+            'del "%~f0" >nul 2>&1',
+          ].join('\r\n');
+          fs.writeFileSync(batchPath, batchLines, 'utf8');
+          const child = spawn('cmd.exe', ['/c', batchPath], {
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true,
+          });
           child.unref();
           setTimeout(() => {
             if (mainWindow && !mainWindow.isDestroyed()) {
