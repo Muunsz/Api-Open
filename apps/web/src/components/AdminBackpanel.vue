@@ -1164,7 +1164,9 @@ onUnmounted(() => {
 
 <style scoped>
 .bp-shell {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background: radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 45%), var(--ao-bg);
   color: var(--ao-text);
   display: flex;
@@ -1210,7 +1212,10 @@ onUnmounted(() => {
 }
 .bp-layout {
   display: flex;
-  min-height: 100vh;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 .bp-sidebar {
   width: 248px;
@@ -1319,11 +1324,22 @@ onUnmounted(() => {
 .bp-content {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   padding: 22px 26px;
   display: flex;
   flex-direction: column;
   gap: 18px;
   overflow-y: auto;
+  overflow-x: auto;
+}
+.bp-content :deep(.el-table) {
+  flex-shrink: 0;
+  width: 100%;
+}
+.bp-content :deep(.el-table__body-wrapper) {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - 240px);
 }
 .bp-page-head {
   display: flex;
