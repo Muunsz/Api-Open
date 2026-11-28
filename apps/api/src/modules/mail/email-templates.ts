@@ -44,11 +44,11 @@ function renderEmailShell(options: {
           </tr>
           <!-- Brand Header -->
           <tr>
-            <td style="padding:28px 32px 16px 32px;border-bottom:1px solid #f1f5f9;">
+            <td style="padding:24px 32px 18px 32px;background:linear-gradient(180deg,#0f172a 0%,#1e293b 100%);">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td style="vertical-align:middle;">
-                    <span style="display:inline-block;padding:6px 12px;background-color:#0f172a;color:#ffffff;font-size:13px;font-weight:700;letter-spacing:0.4px;border-radius:8px;">
+                    <span style="display:inline-block;padding:6px 12px;background-color:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.16);color:#ffffff;font-size:13px;font-weight:700;letter-spacing:0.5px;border-radius:8px;">
                       { } API-OPEN
                     </span>
                   </td>
@@ -226,6 +226,76 @@ export function renderPasswordResetEmail(params: {
       ctaUrl: params.resetUrl,
       footerNote:
         'If you did not request a password reset, no action is needed and your current password will remain unchanged.',
+    }),
+  };
+}
+
+export function renderEmailVerificationEmail(params: {
+  recipientEmail: string;
+  verifyUrl: string;
+}) {
+  const safeEmail = escapeHtml(params.recipientEmail);
+  const bodyHtml = `
+    <div style="background-color:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+      <p style="margin:0;font-size:13px;line-height:1.55;color:#1e40af;">
+        <strong>Account Verification:</strong> Confirming <strong>${safeEmail}</strong> activates workspace sync, team collaboration, and cloud backups.
+      </p>
+    </div>
+    <p style="margin:0 0 8px 0;font-size:13px;line-height:1.6;color:#475569;">
+      Click the button below to verify your email address and finish setting up your Api-Open account.
+    </p>
+  `;
+
+  return {
+    subject: 'Verify your Api-Open email address',
+    text: `Verify your email address (${params.recipientEmail}) for Api-Open by opening this link: ${params.verifyUrl}`,
+    html: renderEmailShell({
+      preheader: 'Verify your email address to activate your Api-Open account.',
+      badge: 'Email Verification',
+      badgeColor: '#047857',
+      badgeBg: '#d1fae5',
+      title: 'Verify your email address',
+      subtitle: `Welcome to Api-Open! Please confirm ${params.recipientEmail} to continue.`,
+      bodyHtml,
+      ctaLabel: 'Verify Email Address',
+      ctaUrl: params.verifyUrl,
+      footerNote:
+        'If you did not create an Api-Open account, you can safely ignore this email.',
+    }),
+  };
+}
+
+export function renderMagicLinkEmail(params: {
+  recipientEmail: string;
+  loginUrl: string;
+}) {
+  const safeEmail = escapeHtml(params.recipientEmail);
+  const bodyHtml = `
+    <div style="background-color:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+      <p style="margin:0;font-size:13px;line-height:1.55;color:#5b21b6;">
+        <strong>One-Click Sign In:</strong> Use this secure link to sign in to <strong>${safeEmail}</strong> without typing your password.
+      </p>
+    </div>
+    <p style="margin:0 0 8px 0;font-size:13px;line-height:1.6;color:#475569;">
+      For your security, this link expires automatically and works only once.
+    </p>
+  `;
+
+  return {
+    subject: 'Your Api-Open sign-in link',
+    text: `Sign in to Api-Open (${params.recipientEmail}) using this secure link: ${params.loginUrl}`,
+    html: renderEmailShell({
+      preheader: 'Your secure one-click sign-in link for Api-Open.',
+      badge: 'Magic Sign-In',
+      badgeColor: '#5b21b6',
+      badgeBg: '#ede9fe',
+      title: 'Sign in to Api-Open',
+      subtitle: `We prepared a one-click sign-in link for ${params.recipientEmail}.`,
+      bodyHtml,
+      ctaLabel: 'Sign In to Api-Open',
+      ctaUrl: params.loginUrl,
+      footerNote:
+        'If you did not request this sign-in link, you can safely ignore this email.',
     }),
   };
 }

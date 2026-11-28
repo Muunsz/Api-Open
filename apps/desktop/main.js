@@ -679,11 +679,45 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle('api-open:get-version', () => app.getVersion());
 
     ipcMain.handle('api-open:open-external', async (_event, url) => {
-      if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
-        await shell.openExternal(url);
-        return true;
+      if (
+        typeof url !== 'string' ||
+        (!url.startsWith('https://') && !url.startsWith('http://'))
+      ) {
+        return false;
       }
-      return false;
+      if (process.platform === 'win32') {
+        const chromeCandidates = [
+          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+          'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+          path.join(
+            process.env.LOCALAPPDATA || '',
+            'Google',
+            'Chrome',
+            'Application',
+            'chrome.exe',
+          ),
+        ];
+        const chromePath = chromeCandidates.find((p) => p && fs.existsSync(p));
+        if (chromePath) {
+          const child = spawn(chromePath, [url], {
+            detached: true,
+            stdio: 'ignore',
+          });
+          child.unref();
+          return true;
+        }
+      } else if (process.platform === 'darwin') {
+        if (fs.existsSync('/Applications/Google Chrome.app')) {
+          const child = spawn('open', ['-a', 'Google Chrome', url], {
+            detached: true,
+            stdio: 'ignore',
+          });
+          child.unref();
+          return true;
+        }
+      }
+      await shell.openExternal(url);
+      return true;
     });
 
     ipcMain.handle('api-open:execute-request', async (_event, payload) => {

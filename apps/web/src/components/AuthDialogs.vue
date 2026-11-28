@@ -41,6 +41,7 @@ watch(
   (val) => {
     if (val) emit('update:passwordVisible', true);
   },
+  { immediate: true },
 );
 
 async function handleAuthSubmit() {
@@ -447,9 +448,21 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
 
     <template v-else>
       <div class="reset-sent-card">
-        <div class="reset-sent-title">Check your inbox</div>
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px">
+          <span
+            style="width: 32px; height: 32px; border-radius: 8px; background: rgba(37, 99, 235, 0.16); color: #60a5fa; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px;"
+          >
+            @
+          </span>
+          <div>
+            <div class="reset-sent-title" style="margin: 0">Check your inbox</div>
+            <div style="font-size: 11.5px; color: var(--ao-text-muted)">
+              Reset link dispatched
+            </div>
+          </div>
+        </div>
         <p class="reset-sent-desc">
-          We sent a password reset link to <strong>{{ resetEmail }}</strong>. Open the link in your email to set a new password.
+          We sent a secure password reset link to <strong>{{ resetEmail }}</strong>. Open the link in your email to set a new password (check Spam/Promotions if not in Inbox).
         </p>
       </div>
 
@@ -527,11 +540,24 @@ async function handleOAuthLogin(provider: 'google' | 'github' | 'discord') {
   <!-- Set / Update Password Dialog -->
   <el-dialog
     :model-value="passwordVisible"
-    title="Set / Update Password"
-    width="min(92vw, 390px)"
+    :title="ws.needsPasswordSetup ? 'Reset / Set New Password' : 'Set / Update Password'"
+    :show-close="!ws.needsPasswordSetup"
+    :close-on-click-modal="!ws.needsPasswordSetup"
+    :close-on-press-escape="!ws.needsPasswordSetup"
+    width="min(92vw, 410px)"
     align-center
+    class="auth-modal-dialog"
     @update:model-value="emit('update:passwordVisible', $event)"
   >
+    <el-alert
+      v-if="ws.needsPasswordSetup"
+      type="info"
+      :closable="false"
+      show-icon
+      title="Complete your password setup"
+      description="Enter a new password below to finish resetting or securing your account."
+      style="margin-bottom: 14px"
+    />
     <el-form label-position="top" class="auth-form" @submit.prevent="handleSaveNewPassword">
       <el-form-item label="New Password">
         <el-input

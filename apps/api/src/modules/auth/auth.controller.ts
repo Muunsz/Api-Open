@@ -7,7 +7,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { renderPasswordResetEmail } from '../mail/email-templates';
+import {
+  renderEmailVerificationEmail,
+  renderMagicLinkEmail,
+  renderPasswordResetEmail,
+} from '../mail/email-templates';
 import { MailService } from '../mail/mail.service';
 import { CurrentUser } from './current-user.decorator';
 import { type AuthUser, SupabaseAuthGuard } from './supabase-auth.guard';
@@ -174,5 +178,131 @@ export class AuthController {
     }
 
     return { ok: true, deletedUserId: user.id };
+  }
+
+  @Post('send-magic-link')
+  async sendMagicLink(
+    @Body() body: { email?: string; redirectTo?: string },
+  ) {
+    const email = body.email?.trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new BadRequestException('Valid email address is required');
+    }
+
+    const supabaseUrl = this.config.get<string>('SUPABASE_URL')?.trim();
+    const serviceRoleKey = this.config
+      .get<string>('SUPABASE_SERVICE_ROLE_KEY')
+      ?.trim();
+    const defaultRedirect =
+      this.config.get<string>('CORS_ORIGIN')?.split(',')[0]?.trim() ||
+      'http://localhost:9999';
+    const redirectTo = body.redirectTo?.trim() || defaultRedirect;
+
+    if (supabaseUrl && serviceRoleKey) {
+      const res = await fetch(`${supabaseUrl}/auth/v1/admin/generate_link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+        },
+        body: JSON.stringify({
+          type: 'magiclink',
+          email,
+          redirect_to: redirectTo,
+        }),
+      });
+
+      if (res.ok) {
+        const payload = (await res.json()) as {
+          action_link?: string;
+          properties?: { action_link?: string };
+        };
+        const loginUrl =
+          payload.action_link || payload.properties?.action_link || redirectTo;
+        const rendered = renderMagicLinkEmail({
+          recipientEmail: email,
+          loginUrl,
+        });
+        const mailResult = await this.mailService.sendEmail({
+          to: email,
+          subject: rendered.subject,
+          text: rendered.text,
+          html: rendered.html,
+          category: 'auth_magic_link',
+        });
+        return {
+          ok: mailResult.success,
+          handled: true,
+          mode: 'custom_smtp',
+          email,
+        };
+      }
+    }
+
+    return { ok: true, handled: false, mode: 'client_fallback', email };
+  }
+
+  @Post('send-verification')
+  async sendVerificationEmail(
+    @Body() body: { email?: string; redirectTo?: string },
+  ) {
+    const email = body.email?.trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new BadRequestException('Valid email address is required');
+    }
+
+    const supabaseUrl = this.config.get<string>('SUPABASE_URL')?.trim();
+    const serviceRoleKey = this.config
+      .get<string>('SUPABASE_SERVICE_ROLE_KEY')
+      ?.trim();
+    const defaultRedirect =
+      this.config.get<string>('CORS_ORIGIN')?.split(',')[0]?.trim() ||
+      'http://localhost:9999';
+    const redirectTo = body.redirectTo?.trim() || defaultRedirect;
+
+    if (supabaseUrl && serviceRoleKey) {
+      const res = await fetch(`${supabaseUrl}/auth/v1/admin/generate_link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+        },
+        body: JSON.stringify({
+          type: 'magiclink',
+          email,
+          redirect_to: redirectTo,
+        }),
+      });
+
+      if (res.ok) {
+        const payload = (await res.json()) as {
+          action_link?: string;
+          properties?: { action_link?: string };
+        };
+        const verifyUrl =
+          payload.action_link || payload.properties?.action_link || redirectTo;
+        const rendered = renderEmailVerificationEmail({
+          recipientEmail: email,
+          verifyUrl,
+        });
+        const mailResult = await this.mailService.sendEmail({
+          to: email,
+          subject: rendered.subject,
+          text: rendered.text,
+          html: rendered.html,
+          category: 'auth_verification',
+        });
+        return {
+          ok: mailResult.success,
+          handled: true,
+          mode: 'custom_smtp',
+          email,
+        };
+      }
+    }
+
+    return { ok: true, handled: false, mode: 'client_fallback', email };
   }
 }

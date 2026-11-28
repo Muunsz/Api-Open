@@ -397,42 +397,46 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  function hasRecoveryInCurrentUrl(): boolean {
+    if (typeof window === 'undefined') return false;
+    const search = new URLSearchParams(window.location.search);
+    const hashRaw = window.location.hash.startsWith('#')
+      ? window.location.hash.slice(1)
+      : window.location.hash;
+    const hash = new URLSearchParams(hashRaw);
+    return (
+      search.get('type') === 'recovery' || hash.get('type') === 'recovery'
+    );
+  }
+
   async function initAuth() {
     if (!supabase || authInitialized) return;
     authInitialized = true;
-    const { data } = await supabase.auth.getSession();
-    user.value = data.session?.user ?? null;
-    accessToken.value = data.session?.access_token ?? null;
-    if (user.value && !isUserEmailVerified(user.value)) {
-      pendingVerificationEmail.value = user.value.email ?? '';
-      needsEmailVerification.value = true;
-    } else {
-      needsEmailVerification.value = false;
-      pendingVerificationEmail.value = '';
-    }
-    if (accessToken.value) {
-      await loadWorkspaces();
-      maybeSendOAuthSetPasswordEmail(user.value);
-    }
 
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', () => {
-        if (
-          document.visibilityState === 'visible' &&
-          accessToken.value &&
-          lastWorkspaceSyncAt > 0 &&
-          Date.now() - lastWorkspaceSyncAt >= WORKSPACE_SYNC_TTL_MS
-        ) {
-          loadWorkspaces().catch(() => undefined);
-        }
-      });
+    const recoveryFromUrl = hasRecoveryInCurrentUrl();
+    const recoveryFromStorage =
+      typeof sessionStorage !== 'undefined' &&
+      sessionStorage.getItem('api_open_password_recovery') === '1';
+
+    if (recoveryFromUrl || recoveryFromStorage) {
+      needsPasswordSetup.value = true;
+      try {
+        sessionStorage.setItem('api_open_password_recovery', '1');
+      } catch {
+        // ignore
+      }
     }
 
     supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'INITIAL_SESSION') return;
       if (event === 'PASSWORD_RECOVERY') {
         needsPasswordSetup.value = true;
+        try {
+          sessionStorage.setItem('api_open_password_recovery', '1');
+        } catch {
+          // ignore
+        }
       }
+      if (event === 'INITIAL_SESSION') return;
       const prevToken = accessToken.value;
       user.value = session?.user ?? null;
       accessToken.value = session?.access_token ?? null;
@@ -458,13 +462,43 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           return;
         }
         await loadWorkspaces();
-        if (event === 'SIGNED_IN') {
+        if (event === 'SIGNED_IN' && !needsPasswordSetup.value) {
           maybeSendOAuthSetPasswordEmail(user.value);
         }
       } else {
         clearSessionState();
       }
     });
+
+    const { data } = await supabase.auth.getSession();
+    user.value = data.session?.user ?? null;
+    accessToken.value = data.session?.access_token ?? null;
+    if (user.value && !isUserEmailVerified(user.value)) {
+      pendingVerificationEmail.value = user.value.email ?? '';
+      needsEmailVerification.value = true;
+    } else {
+      needsEmailVerification.value = false;
+      pendingVerificationEmail.value = '';
+    }
+    if (accessToken.value) {
+      await loadWorkspaces();
+      if (!needsPasswordSetup.value) {
+        maybeSendOAuthSetPasswordEmail(user.value);
+      }
+    }
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (
+          document.visibilityState === 'visible' &&
+          accessToken.value &&
+          lastWorkspaceSyncAt > 0 &&
+          Date.now() - lastWorkspaceSyncAt >= WORKSPACE_SYNC_TTL_MS
+        ) {
+          loadWorkspaces().catch(() => undefined);
+        }
+      });
+    }
   }
 
   async function signIn(email: string, password: string) {
@@ -535,16 +569,23 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function signInWithOtp(email: string) {
+    const cleanEmail = email.trim();
+    const redirectTo = getAuthRedirectUrl();
+    const backendResult = await workspaceApi
+      .sendMagicLink(cleanEmail, redirectTo)
+      .catch(() => null);
+    if (backendResult?.handled) return;
+
     if (!supabase) throw new Error('Supabase is not configured');
     const { error } = await supabase.auth.signInWithOtp({
-      email,
+      email: cleanEmail,
       options: {
-        emailRedirectTo: getAuthRedirectUrl(),
+        emailRedirectTo: redirectTo,
         shouldCreateUser: true,
       },
     });
     workspaceApi.logAuthEmail({
-      to: email,
+      to: cleanEmail,
       subject: 'Email Login Verification Link',
       category: 'auth_magic_link',
       status: error ? 'failed' : 'sent',
@@ -579,16 +620,23 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function resendVerification(email: string) {
+    const cleanEmail = email.trim();
+    const redirectTo = getAuthRedirectUrl();
+    const backendResult = await workspaceApi
+      .sendVerificationEmail(cleanEmail, redirectTo)
+      .catch(() => null);
+    if (backendResult?.handled) return;
+
     if (!supabase) throw new Error('Supabase is not configured');
     const { error } = await supabase.auth.resend({
       type: 'signup',
-      email,
+      email: cleanEmail,
       options: {
-        emailRedirectTo: getAuthRedirectUrl(),
+        emailRedirectTo: redirectTo,
       },
     });
     workspaceApi.logAuthEmail({
-      to: email,
+      to: cleanEmail,
       subject: 'Resend Signup Verification Email',
       category: 'auth_verification',
       status: error ? 'failed' : 'sent',
@@ -986,6 +1034,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     });
     if (error) throw error;
     needsPasswordSetup.value = false;
+    try {
+      sessionStorage.removeItem('api_open_password_recovery');
+    } catch {
+      // ignore
+    }
   }
 
   async function refreshCollections(workspaceId = activeWorkspaceId.value) {

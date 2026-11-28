@@ -356,6 +356,26 @@ export const workspaceService = {
     };
   },
 
+  sendMagicLink: async (email: string, redirectTo?: string) => {
+    const res = await fetch(`${API_BASE}/auth/send-magic-link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, redirectTo }),
+    });
+    if (!res.ok) return { ok: false, handled: false };
+    return (await res.json()) as { ok: boolean; handled: boolean };
+  },
+
+  sendVerificationEmail: async (email: string, redirectTo?: string) => {
+    const res = await fetch(`${API_BASE}/auth/send-verification`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, redirectTo }),
+    });
+    if (!res.ok) return { ok: false, handled: false };
+    return (await res.json()) as { ok: boolean; handled: boolean };
+  },
+
   logAuthEmail: (payload: {
     to: string;
     subject: string;

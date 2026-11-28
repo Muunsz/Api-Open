@@ -904,7 +904,7 @@ onUnmounted(() => {
 <style scoped>
 .bp-shell {
   min-height: 100vh;
-  background: var(--ao-bg);
+  background: radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 45%), var(--ao-bg);
   color: var(--ao-text);
   display: flex;
   flex-direction: column;
@@ -918,11 +918,12 @@ onUnmounted(() => {
 }
 .bp-login-card {
   width: min(94vw, 420px);
-  padding: 28px;
-  border-radius: 14px;
+  padding: 30px;
+  border-radius: 16px;
   background: var(--ao-surface);
   border: 1px solid var(--ao-border);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+  border-top: 3px solid var(--el-color-primary);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
 }
 .bp-login-badge {
   display: inline-block;
@@ -938,7 +939,8 @@ onUnmounted(() => {
 }
 .bp-login-title {
   margin: 0 0 6px;
-  font-size: 20px;
+  font-size: 21px;
+  font-weight: 700;
 }
 .bp-login-sub {
   margin: 0 0 18px;
@@ -955,8 +957,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 20px;
-  background: var(--ao-surface);
+  padding: 12px 24px;
+  background: linear-gradient(90deg, var(--ao-surface) 0%, rgba(37, 99, 235, 0.06) 100%);
   border-bottom: 1px solid var(--ao-border);
   flex-wrap: wrap;
 }
@@ -965,13 +967,14 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   font-size: 15px;
+  letter-spacing: 0.2px;
 }
 .bp-brand-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: #10b981;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.7);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.8);
 }
 .bp-topbar-actions {
   display: flex;
@@ -981,8 +984,8 @@ onUnmounted(() => {
 }
 .bp-tabs {
   display: flex;
-  gap: 4px;
-  padding: 8px 20px;
+  gap: 6px;
+  padding: 10px 24px;
   background: var(--ao-surface-2, var(--ao-surface));
   border-bottom: 1px solid var(--ao-border);
   overflow-x: auto;
@@ -991,12 +994,13 @@ onUnmounted(() => {
   border: 1px solid transparent;
   background: transparent;
   color: var(--ao-text-muted);
-  padding: 6px 12px;
-  border-radius: 6px;
+  padding: 7px 13px;
+  border-radius: 8px;
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  transition: all 0.15s ease;
 }
 .bp-tab-btn:hover {
   color: var(--ao-text);
@@ -1004,37 +1008,48 @@ onUnmounted(() => {
 }
 .bp-tab-btn.active {
   color: var(--el-color-primary);
-  background: var(--ao-surface);
-  border-color: var(--ao-border);
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.35);
 }
 .bp-content {
   flex: 1;
-  padding: 18px 20px;
+  padding: 20px 24px;
+  max-width: 1480px;
+  width: 100%;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 .bp-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
 }
 .bp-kpi-card {
-  padding: 14px 16px;
-  border-radius: 10px;
+  padding: 16px 18px;
+  border-radius: 12px;
   background: var(--ao-surface);
   border: 1px solid var(--ao-border);
+  border-left: 3px solid var(--el-color-primary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.bp-kpi-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--el-color-primary);
 }
 .bp-kpi-label {
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: var(--ao-text-muted);
 }
 .bp-kpi-val {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
-  margin: 4px 0;
+  margin: 6px 0 4px;
 }
 .bp-kpi-sub {
   font-size: 12px;
@@ -1042,19 +1057,23 @@ onUnmounted(() => {
 }
 .bp-two-col {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 16px;
 }
 .bp-panel {
-  padding: 14px 16px;
-  border-radius: 10px;
+  padding: 16px 18px;
+  border-radius: 12px;
   background: var(--ao-surface);
   border: 1px solid var(--ao-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 .bp-panel-title {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 700;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 .bp-kv-list {
   display: flex;
@@ -1066,14 +1085,18 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   font-size: 12.5px;
-  padding-bottom: 6px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--ao-border);
 }
 .bp-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--ao-surface);
+  border: 1px solid var(--ao-border);
 }
 .bp-json-pre {
   margin: 0;
