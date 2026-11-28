@@ -47,7 +47,12 @@ jobs:
         working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
+          VERSION="${RELEASE_TAG#v}"
+          if echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            npm version "$VERSION" --no-git-tag-version --allow-same-version
+          fi
           npm install --no-workspaces --no-audit --no-fund
           npx electron-builder --${{ matrix.platform }} --publish never
       - name: Collect Electron artifact

@@ -26,6 +26,7 @@ import DevToolboxDialog from './components/modals/DevToolboxDialog.vue';
 import PluginMarketplaceDialog from './components/modals/PluginMarketplaceDialog.vue';
 import TrashDialog from './components/modals/TrashDialog.vue';
 import WebhookBinDialog from './components/modals/WebhookBinDialog.vue';
+import { toggleCommentOnSelection } from './utils/editorComments';
 import {
   downloadBlobFile,
   exportAllCollectionsAsFormat,
@@ -133,6 +134,81 @@ const schemasVisible = ref(false);
 const proxyRecorderVisible = ref(false);
 const snapshotsVisible = ref(false);
 const snapshotsTarget = ref<CollectionDto | null>(null);
+
+interface DesktopUpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  releaseName?: string;
+  releaseNotes?: string;
+  releaseUrl?: string;
+  downloadUrl?: string;
+  assetName?: string;
+}
+
+interface DesktopBridge {
+  isDesktop?: boolean;
+  checkForUpdates?: () => Promise<DesktopUpdateInfo>;
+  downloadUpdate?: (payload: {
+    url: string;
+    fileName?: string;
+  }) => Promise<{ ok: boolean; filePath?: string; openedExternal?: boolean; error?: string }>;
+  onUpdateAvailable?: (cb: (info: DesktopUpdateInfo) => void) => () => void;
+}
+
+const desktopUpdateVisible = ref(false);
+const desktopUpdateInfo = ref<DesktopUpdateInfo | null>(null);
+const desktopUpdateDownloading = ref(false);
+let cleanupUpdateListener: (() => void) | null = null;
+
+function showDesktopUpdatePrompt(info: DesktopUpdateInfo | null | undefined) {
+  if (!info?.updateAvailable) return;
+  const skipped = localStorage.getItem('api_open_skipped_update_version');
+  if (skipped === info.latestVersion) return;
+  desktopUpdateInfo.value = info;
+  desktopUpdateVisible.value = true;
+}
+
+function skipDesktopUpdateVersion() {
+  if (desktopUpdateInfo.value?.latestVersion) {
+    localStorage.setItem(
+      'api_open_skipped_update_version',
+      desktopUpdateInfo.value.latestVersion,
+    );
+  }
+  desktopUpdateVisible.value = false;
+}
+
+async function installDesktopUpdate() {
+  const info = desktopUpdateInfo.value;
+  if (!info?.downloadUrl) return;
+  const bridge = (window as unknown as { apiOpenDesktop?: DesktopBridge })
+    .apiOpenDesktop;
+  if (!bridge?.downloadUpdate) {
+    window.open(info.releaseUrl || info.downloadUrl, '_blank', 'noopener');
+    return;
+  }
+  desktopUpdateDownloading.value = true;
+  try {
+    const res = await bridge.downloadUpdate({
+      url: info.downloadUrl,
+      fileName: info.assetName,
+    });
+    if (res.ok) {
+      ElMessage.success(
+        'Update downloaded! Follow the installer to finish updating.',
+      );
+      desktopUpdateVisible.value = false;
+    } else if (res.openedExternal) {
+      ElMessage.info('Opened update download in your browser.');
+      desktopUpdateVisible.value = false;
+    } else {
+      ElMessage.error(res.error || 'Failed to download update');
+    }
+  } finally {
+    desktopUpdateDownloading.value = false;
+  }
+}
 const gitSyncVisible = ref(false);
 const splitViewEnabled = ref(false);
 const secondaryTabId = ref('');
@@ -359,9 +435,32 @@ function handleGlobalKeydown(e: KeyboardEvent) {
     openSettings('layout');
     return;
   }
-  if (mod && e.key === '/') {
+  if (mod && e.shiftKey && (e.key === '?' || e.key === '/' || e.code === 'Slash')) {
     e.preventDefault();
     shortcutsDialogVisible.value = true;
+    return;
+  }
+  if (mod && !e.shiftKey && !e.altKey && (e.key === '/' || e.code === 'Slash')) {
+    const targetEl = e.target as HTMLElement | null;
+    if (
+      targetEl instanceof HTMLTextAreaElement ||
+      (targetEl instanceof HTMLInputElement &&
+        ['text', 'search', 'url', 'email', ''].includes(targetEl.type))
+    ) {
+      if (targetEl.readOnly || targetEl.disabled) return;
+      e.preventDefault();
+      const { nextValue, nextStart, nextEnd } = toggleCommentOnSelection(
+        targetEl.value,
+        targetEl.selectionStart ?? 0,
+        targetEl.selectionEnd ?? 0,
+        'text',
+      );
+      targetEl.value = nextValue;
+      targetEl.dispatchEvent(new Event('input', { bubbles: true }));
+      nextTick(() => {
+        targetEl.setSelectionRange(nextStart, nextEnd);
+      });
+    }
     return;
   }
 
@@ -414,10 +513,27 @@ onMounted(async () => {
   }
   ws.initAuth();
   window.addEventListener('keydown', handleGlobalKeydown);
+
+  const desktopBridge = (window as unknown as { apiOpenDesktop?: DesktopBridge })
+    .apiOpenDesktop;
+  if (desktopBridge?.isDesktop) {
+    if (desktopBridge.onUpdateAvailable) {
+      cleanupUpdateListener = desktopBridge.onUpdateAvailable((info) => {
+        showDesktopUpdatePrompt(info);
+      });
+    }
+    if (desktopBridge.checkForUpdates) {
+      desktopBridge.checkForUpdates().then((info) => {
+        showDesktopUpdatePrompt(info);
+      }).catch(() => {});
+    }
+  }
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
+  cleanupUpdateListener?.();
+  cleanupUpdateListener = null;
 });
 
 function handleTabEdit(
@@ -1178,6 +1294,45 @@ async function openEnvDialog(envId?: string) {
     <TrashDialog v-model:visible="trashVisible" />
     <PluginMarketplaceDialog v-model:visible="marketplaceVisible" />
     <Base64ImageDialog v-model:visible="footerBase64DialogVisible" />
+
+    <el-dialog
+      v-model="desktopUpdateVisible"
+      title="Update Available — Api-Open Desktop"
+      width="min(94vw, 460px)"
+      align-center
+    >
+      <div v-if="desktopUpdateInfo" style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-size: 13.5px; color: var(--ao-text);">
+          A new version of <strong>Api-Open Desktop</strong> is available:
+          <strong>v{{ desktopUpdateInfo.latestVersion }}</strong>
+          <span style="color: var(--ao-text-muted); font-size: 12px;">
+            (installed: v{{ desktopUpdateInfo.currentVersion }})
+          </span>
+        </div>
+        <pre
+          v-if="desktopUpdateInfo.releaseNotes"
+          style="margin: 0; max-height: 150px; overflow: auto; padding: 10px 12px; border-radius: 8px; background: var(--ao-surface-2, rgba(255,255,255,0.04)); border: 1px solid var(--ao-border); font-size: 12px; white-space: pre-wrap; color: var(--ao-text-muted);"
+        >{{ desktopUpdateInfo.releaseNotes }}</pre>
+      </div>
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap;">
+          <el-button size="small" @click="skipDesktopUpdateVersion">
+            Skip Version
+          </el-button>
+          <el-button size="small" @click="desktopUpdateVisible = false">
+            Later
+          </el-button>
+          <el-button
+            type="primary"
+            size="small"
+            :loading="desktopUpdateDownloading"
+            @click="installDesktopUpdate"
+          >
+            {{ desktopUpdateDownloading ? 'Downloading...' : 'Download & Update' }}
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </el-container>
 </template>
 

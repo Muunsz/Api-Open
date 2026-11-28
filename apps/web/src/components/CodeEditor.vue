@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
+import { toggleCommentOnSelection } from '../utils/editorComments';
 
 const props = withDefaults(
   defineProps<{
@@ -210,6 +211,26 @@ function handleKeydown(e: KeyboardEvent) {
       showAutocomplete.value = false;
       return;
     }
+  }
+
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === '/' || e.code === 'Slash')) {
+    if (props.readonly) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const ta = textareaRef.value;
+    if (!ta) return;
+    const { nextValue, nextStart, nextEnd } = toggleCommentOnSelection(
+      ta.value,
+      ta.selectionStart ?? 0,
+      ta.selectionEnd ?? 0,
+      props.language,
+    );
+    emit('update:modelValue', nextValue);
+    nextTick(() => {
+      ta.focus();
+      ta.setSelectionRange(nextStart, nextEnd);
+    });
+    return;
   }
 
   if (e.key === 'Tab') {

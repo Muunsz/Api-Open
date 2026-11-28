@@ -295,6 +295,153 @@ function setupApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+function compareSemver(a, b) {
+  const parse = (v) =>
+    String(v || '0')
+      .replace(/^v/i, '')
+      .split('-')[0]
+      .split('.')
+      .map((n) => parseInt(n, 10) || 0);
+  const pa = parse(a);
+  const pb = parse(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const da = pa[i] || 0;
+    const db = pb[i] || 0;
+    if (da > db) return 1;
+    if (da < db) return -1;
+  }
+  return 0;
+}
+
+function getPlatformAssetName() {
+  if (process.platform === 'win32') return 'Api-Open-Electron-Windows.exe';
+  if (process.platform === 'darwin') return 'Api-Open-Electron-macOS.dmg';
+  return 'Api-Open-Electron-Linux.AppImage';
+}
+
+function fetchJson(urlStr, maxRedirects = 5) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(urlStr);
+    const transport = parsed.protocol === 'https:' ? https : http;
+    const req = transport.get(
+      parsed,
+      {
+        headers: {
+          'User-Agent': 'Api-Open-Desktop',
+          Accept: 'application/vnd.github+json',
+        },
+        timeout: 12000,
+      },
+      (res) => {
+        if (
+          res.statusCode >= 300 &&
+          res.statusCode < 400 &&
+          res.headers.location &&
+          maxRedirects > 0
+        ) {
+          res.resume();
+          const nextUrl = new URL(res.headers.location, parsed).toString();
+          resolve(fetchJson(nextUrl, maxRedirects - 1));
+          return;
+        }
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              resolve(JSON.parse(text));
+            } catch (err) {
+              reject(err);
+            }
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}`));
+          }
+        });
+      },
+    );
+    req.on('timeout', () => req.destroy(new Error('Update check timed out')));
+    req.on('error', reject);
+  });
+}
+
+function downloadFileWithRedirects(urlStr, destPath, maxRedirects = 6) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(urlStr);
+    const transport = parsed.protocol === 'https:' ? https : http;
+    const req = transport.get(
+      parsed,
+      {
+        headers: { 'User-Agent': 'Api-Open-Desktop' },
+        timeout: 120000,
+      },
+      (res) => {
+        if (
+          res.statusCode >= 300 &&
+          res.statusCode < 400 &&
+          res.headers.location &&
+          maxRedirects > 0
+        ) {
+          res.resume();
+          const nextUrl = new URL(res.headers.location, parsed).toString();
+          resolve(downloadFileWithRedirects(nextUrl, destPath, maxRedirects - 1));
+          return;
+        }
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          res.resume();
+          reject(new Error(`Download failed with HTTP ${res.statusCode}`));
+          return;
+        }
+        const out = fs.createWriteStream(destPath);
+        res.pipe(out);
+        out.on('finish', () => {
+          out.close(() => resolve(destPath));
+        });
+        out.on('error', (err) => {
+          fs.unlink(destPath, () => {});
+          reject(err);
+        });
+      },
+    );
+    req.on('timeout', () => req.destroy(new Error('Download timed out')));
+    req.on('error', reject);
+  });
+}
+
+async function checkForDesktopUpdates() {
+  const currentVersion = app.getVersion();
+  try {
+    const data = await fetchJson(
+      'https://api.github.com/repos/Muunsz/Api-Open/releases/latest',
+    );
+    const latestTag = String(data.tag_name || '').trim();
+    const latestVersion = latestTag.replace(/^v/i, '');
+    const assetName = getPlatformAssetName();
+    const asset = (data.assets || []).find((a) => a.name === assetName);
+    const updateAvailable =
+      Boolean(latestVersion) && compareSemver(latestVersion, currentVersion) > 0;
+    return {
+      currentVersion,
+      latestVersion: latestVersion || currentVersion,
+      updateAvailable,
+      releaseName: data.name || latestTag || `v${currentVersion}`,
+      releaseNotes: String(data.body || '').trim(),
+      releaseUrl:
+        data.html_url || 'https://github.com/Muunsz/Api-Open/releases/latest',
+      downloadUrl: asset?.browser_download_url || data.html_url || '',
+      assetName: asset?.name || assetName,
+    };
+  } catch (err) {
+    return {
+      currentVersion,
+      latestVersion: currentVersion,
+      updateAvailable: false,
+      error: err instanceof Error ? err.message : 'Failed to check updates',
+    };
+  }
+}
+
 function createWindow() {
   const state = loadWindowState();
   const appIcon = resolveAppIcon();
@@ -349,6 +496,15 @@ function createWindow() {
     win.loadURL('http://localhost:9999');
   }
 
+  win.webContents.once('did-finish-load', () => {
+    setTimeout(async () => {
+      const info = await checkForDesktopUpdates();
+      if (info.updateAvailable && !win.isDestroyed()) {
+        win.webContents.send('api-open:update-available', info);
+      }
+    }, 1500);
+  });
+
   mainWindow = win;
 }
 
@@ -389,6 +545,33 @@ if (!app.requestSingleInstanceLock()) {
       if (canceled || !filePaths.length) return { canceled: true };
       const content = fs.readFileSync(filePaths[0], 'utf8');
       return { canceled: false, filePath: filePaths[0], content };
+    });
+
+    ipcMain.handle('api-open:check-updates', async () => {
+      return checkForDesktopUpdates();
+    });
+
+    ipcMain.handle('api-open:download-update', async (_event, payload = {}) => {
+      const url = payload.url;
+      const fileName = payload.fileName || getPlatformAssetName();
+      if (!url) return { ok: false, error: 'Missing download URL' };
+      try {
+        const downloadsDir = app.getPath('downloads');
+        const destPath = path.join(downloadsDir, fileName);
+        await downloadFileWithRedirects(url, destPath);
+        const openErr = await shell.openPath(destPath);
+        if (openErr) {
+          shell.showItemInFolder(destPath);
+        }
+        return { ok: true, filePath: destPath };
+      } catch (err) {
+        if (url) await shell.openExternal(url);
+        return {
+          ok: false,
+          openedExternal: true,
+          error: err instanceof Error ? err.message : 'Download failed',
+        };
+      }
     });
 
     createWindow();

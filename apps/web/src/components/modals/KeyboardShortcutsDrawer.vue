@@ -18,7 +18,8 @@ const shortcutGroups: ShortcutGroup[] = [
     items: [
       { keys: '?', desc: 'Help / Shortcuts' },
       { keys: 'Ctrl + K', desc: 'Search API & Commands' },
-      { keys: 'Ctrl + /', desc: 'Keyboard Shortcuts' },
+      { keys: 'Ctrl + Shift + /', desc: 'Keyboard Shortcuts' },
+      { keys: 'Ctrl + /', desc: 'Toggle Comment in Editor / Input' },
       { keys: 'Ctrl + D', desc: 'Close Active Tab' },
       { keys: 'Ctrl + B', desc: 'Hide / Show Sidebar' },
     ],

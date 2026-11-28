@@ -1,6 +1,6 @@
 {
   "name": "@api-open/desktop",
-  "version": "0.1.0",
+  "version": "1.2.0",
   "description": "Api-Open Desktop Client",
   "author": "Api-Open",
   "private": true,
